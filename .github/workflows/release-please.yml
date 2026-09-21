@@ -1,0 +1,30 @@
+name: release-please
+
+# Independent per-component releases from Conventional Commits. release-please opens
+# one release PR per component; merging it tags + changelogs + cuts a GitHub release.
+# Components (see release-please-config.json): agent (Python) -> tag agent-vX.Y.Z,
+# app (Tauri) -> tag app-vX.Y.Z. Versioning/changelogs are owned here; commitizen
+# only lints commit messages. release-please attributes each commit to a component
+# BY THE FILES IT TOUCHES — keep a commit within one component's path.
+#
+# DORMANT until the component packages exist: with `agent/` and `frontend/` not yet
+# scaffolded, release-please validation would fail on the missing package files, so
+# this runs on manual dispatch only for now. When the skeleton lands (backlog f3.1 /
+# f4.1), switch the trigger to `push: branches: [main]` to enable automatic releases.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Manifest-driven: reads release-please-config.json + .release-please-manifest.json.
