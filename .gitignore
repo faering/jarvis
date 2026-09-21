@@ -1,0 +1,29 @@
+# Secrets
+.env
+.devcontainer/devcontainer.env
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Rust / Tauri
+target/
+frontend/src-tauri/target/
+
+# OS / editor
+.DS_Store
+*.swp
+
+# act
+.actrc.local
