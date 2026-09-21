@@ -1,0 +1,78 @@
+{
+  "name": "Jarvis",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".",
+    "options": ["--progress=plain", "--tag=jarvis:latest"]
+  },
+  "remoteUser": "vscode",
+  "containerUser": "vscode",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+  },
+  // Runs on the HOST before the container is created:
+  // 1) ensure the shared network exists (devcontainer + compose reach each other),
+  // 2) seed .devcontainer/devcontainer.env so --env-file never fails on a fresh clone,
+  // 3) ensure the ~/.ssh and ~/.gitconfig bind-mount sources exist.
+  "initializeCommand": "docker network inspect jarvis-net >/dev/null 2>&1 || docker network create jarvis-net >/dev/null 2>&1 || true; [ -f .devcontainer/devcontainer.env ] || cp .devcontainer/devcontainer.env.example .devcontainer/devcontainer.env 2>/dev/null || true; mkdir -p $HOME/.ssh; touch $HOME/.gitconfig",
+  "runArgs": [
+    "--env-file",
+    ".devcontainer/devcontainer.env",
+    "--hostname",
+    "devcontainer",
+    "--network",
+    "jarvis-net"
+  ],
+  "mounts": [
+    // Claude Code login/trust/history — a SHARED volume across all your devcontainers.
+    // Per-project separation comes from CLAUDE_CODE_PROJECT_DIR_NAME (remoteEnv below),
+    // which pins ~/.claude/projects/<name>/ regardless of repo.
+    "source=claude-code-home,target=/home/vscode/.claude,type=volume",
+    // Persist shell command history across rebuilds (per-project).
+    "source=jarvis-history,target=/commandhistory,type=volume",
+    // git-over-SSH uses your WSL host keys; identity comes from host ~/.gitconfig (ro).
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind",
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,readonly"
+  ],
+  "containerEnv": {
+    // CLAUDE_CONFIG_DIR redirects ~/.claude.json (login/trust, which lives OUTSIDE
+    // ~/.claude) into the mounted volume too — required alongside the mount above.
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "HISTFILE": "/commandhistory/.bash_history",
+    // Forward host token for gh/CLI tooling in container. If missing, gh can still
+    // fall back to GITHUB_PAT via .bashrc.
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
+    "GH_TOKEN": "${localEnv:GH_TOKEN}"
+    // Secrets (GITHUB_PAT, CONTEXT7_API_KEY) come from .devcontainer/devcontainer.env
+    // via runArgs --env-file, so they are NOT declared here.
+  },
+  "remoteEnv": {
+    // Pins the Claude project dir to "jarvis" so the shared claude-code-home volume keeps
+    // this repo's history/auto-memory separate. Must sit beside CLAUDE_CONFIG_DIR;
+    // read once at startup (env only). Requires Claude Code >= v2.1.234.
+    "CLAUDE_CODE_PROJECT_DIR_NAME": "jarvis"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "rust-lang.rust-analyzer",
+        "tauri-apps.tauri-vscode",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "shd101wyy.markdown-preview-enhanced",
+        "github.vscode-github-actions",
+        "elagil.pre-commit-helper",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind",
+  "workspaceFolder": "/app"
+}
