@@ -1,0 +1,76 @@
+# Standards enforced from commit #1. See docs / CLAUDE.md.
+#   pre-commit stage  -> format + lint (fast, every commit)
+#   commit-msg stage  -> Conventional Commits (commitizen)
+#   pre-push stage     -> tests (kept off every commit to stay fast)
+# Language-specific hooks are scoped with `files:` so they no-op until that code lands.
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  # ---- Hygiene ------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+        # devcontainer.json is JSONC (allows // comments); skip strict JSON parse.
+        exclude: ^\.devcontainer/devcontainer\.json$
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  # ---- Python: lint + format ---------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+
+  # ---- Web (TS/JS/JSON/MD/YAML): format ----------------------------------
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.8
+    hooks:
+      - id: prettier
+        files: ^frontend/.*\.(ts|tsx|js|jsx|css|scss|html|json|md|ya?ml)$
+
+  # ---- Conventional Commits ----------------------------------------------
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.18.1
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  # ---- Project-local hooks (activate when their files exist) --------------
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (frontend)
+        language: system
+        entry: bash -c 'cd frontend && npm run --silent lint'
+        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+      - id: rustfmt
+        name: cargo fmt (src-tauri)
+        language: system
+        entry: bash -c 'cd frontend/src-tauri && cargo fmt --all -- --check'
+        files: ^frontend/src-tauri/.*\.rs$
+        pass_filenames: false
+
+      - id: clippy
+        name: cargo clippy (src-tauri)
+        language: system
+        entry: bash -c 'cd frontend/src-tauri && cargo clippy --all-targets -- -D warnings'
+        files: ^frontend/src-tauri/.*\.rs$
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest (agent)
+        language: system
+        entry: bash -c 'cd agent && python -m pytest -q'
+        files: ^agent/.*\.py$
+        pass_filenames: false
+        stages: [pre-push]

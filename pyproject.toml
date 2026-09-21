@@ -1,0 +1,22 @@
+# Root project config. Holds repo-wide dev-tool settings (commitizen, ruff).
+# The runnable Python package lives in agent/ with its own pyproject.toml.
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "Jarvis — a handheld, physically embodied AI companion."
+requires-python = ">=3.12"
+
+# commitizen is used ONLY to author/lint Conventional Commit messages (`cz commit`,
+# and the commit-msg hook). Versioning, changelog, and GitHub releases are owned by
+# release-please — do not use `cz bump` here.
+[tool.commitizen]
+name = "cz_conventional_commits"
+update_changelog_on_bump = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# Sensible default rule set; tune per-package as the agent code grows.
+select = ["E", "F", "I", "UP", "B"]
