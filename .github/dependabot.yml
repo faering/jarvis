@@ -1,0 +1,22 @@
+# Dependabot version updates. pip (agent/), npm (frontend/), and cargo
+# (frontend/src-tauri/) are added when those packages are scaffolded.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+  - package-ecosystem: docker
+    directory: /.devcontainer
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
