@@ -27,3 +27,6 @@ frontend/src-tauri/target/
 
 # act
 .actrc.local
+
+# Local work-item mirror (synced from GitHub; GitHub is source of truth)
+github-issues.json
