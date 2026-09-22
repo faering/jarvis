@@ -36,3 +36,6 @@ github-issues.json
 .claude/settings.local.json
 CLAUDE.local.md
 .vscode/
+
+# Model weights store (large binaries, fetched at runtime); manifest is tracked
+models/store/
