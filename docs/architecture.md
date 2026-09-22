@@ -22,7 +22,7 @@ flowchart TB
   CLOUD["☁️ Cloud / larger models"]
 
   CAM -->|frames| HAT
-  HAT -->|features| AGENT
+  HAT <-->|inference · features| AGENT
   MIC -->|audio| AGENT
   AGENT <-->|WebSocket| RUST
   RUST --- UI --- SCR
