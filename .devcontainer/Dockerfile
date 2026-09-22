@@ -69,12 +69,24 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
 # git log is newest-first + scrollable by default; pager tweak avoids trapping
 # short output. show-dirty adds the base prompt's dirty marker. User identity is
 # supplied by the read-only ~/.gitconfig bind mount (see devcontainer.json).
+# SSH commit signing is set here rather than in ~/.gitconfig: that file is a
+# single-file bind mount, and `git config` replaces it (write-temp + rename), so
+# host edits land on a new inode the running container never sees. Signing uses
+# the mounted key via the forwarded SSH agent.
 RUN git config --system init.defaultBranch main \
     && git config --system pull.ff only \
     && git config --system push.autoSetupRemote true \
     && git config --system core.pager 'less -FRX' \
     && git config --system log.date iso \
-    && git config --system devcontainers-theme.show-dirty 1
+    && git config --system devcontainers-theme.show-dirty 1 \
+    && git config --system gpg.format ssh \
+    && git config --system user.signingkey /home/vscode/.ssh/id_ed25519.pub \
+    && git config --system commit.gpgsign true \
+    && git config --system tag.gpgsign true \
+    git config --system gpg.format ssh \
+    && git config --system user.signingkey /home/vscode/.ssh/id_ed25519.pub \
+    && git config --system commit.gpgsign true \
+    && git config --system tag.gpgsign true
 
 # ---- Everything below runs as the non-root devcontainer user --------------
 USER vscode
