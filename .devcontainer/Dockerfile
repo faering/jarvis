@@ -82,10 +82,6 @@ RUN git config --system init.defaultBranch main \
     && git config --system gpg.format ssh \
     && git config --system user.signingkey /home/vscode/.ssh/id_ed25519.pub \
     && git config --system commit.gpgsign true \
-    && git config --system tag.gpgsign true \
-    git config --system gpg.format ssh \
-    && git config --system user.signingkey /home/vscode/.ssh/id_ed25519.pub \
-    && git config --system commit.gpgsign true \
     && git config --system tag.gpgsign true
 
 # ---- Everything below runs as the non-root devcontainer user --------------
