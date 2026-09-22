@@ -30,3 +30,9 @@ frontend/src-tauri/target/
 
 # Local work-item mirror (synced from GitHub; GitHub is source of truth)
 github-issues.json
+
+# Personal, per-user settings (shared equivalents: .claude/settings.json, CLAUDE.md,
+# and devcontainer.json -> customizations.vscode.settings)
+.claude/settings.local.json
+CLAUDE.local.md
+.vscode/
