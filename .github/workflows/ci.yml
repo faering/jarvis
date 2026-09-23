@@ -90,6 +90,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v10.2.0 # upstream publishes no floating major tag
+      - name: uv.lock matches pyproject.toml
+        working-directory: agent
+        run: uv lock --check
       - run: pip install pre-commit
       - name: pytest (locked env via uv)
         run: pre-commit run pytest --hook-stage pre-push --all-files
