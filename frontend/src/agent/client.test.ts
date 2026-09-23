@@ -10,12 +10,18 @@ import {
 interface FakeAgentOptions {
   /** Protocol announced in hello; null sends no hello at all. */
   protocol?: number | null;
+  /** Envelope version on the hello frame. */
+  helloV?: number;
   /** Answer pings with a matching pong. */
   pong?: boolean;
 }
 
 /** A minimal stand-in for the Python agent's /ws endpoint. */
-async function fakeAgent({ protocol = 0, pong = true }: FakeAgentOptions = {}) {
+async function fakeAgent({
+  protocol = 0,
+  helloV = 0,
+  pong = true,
+}: FakeAgentOptions = {}) {
   const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const sockets: ServerSocket[] = [];
@@ -25,7 +31,7 @@ async function fakeAgent({ protocol = 0, pong = true }: FakeAgentOptions = {}) {
     if (protocol !== null) {
       socket.send(
         JSON.stringify({
-          v: 0,
+          v: helloV,
           type: "hello",
           id: null,
           payload: { protocol, agent: "1.2.3" },
@@ -160,6 +166,14 @@ describe("AgentClient", () => {
     expect(client.getSnapshot().state).toBe("connecting");
     await waitFor(client, (s) => s.state === "incompatible");
     expect(server.sockets).toHaveLength(2);
+  });
+
+  it("treats a hello with another envelope version as incompatible", async () => {
+    const { client, server } = await setup({ helloV: 1 });
+    client.start();
+    await waitFor(client, (s) => s.state === "incompatible");
+    await sleep(200);
+    expect(server.sockets).toHaveLength(1);
   });
 
   it("reconnects after the server closes the connection", async () => {
