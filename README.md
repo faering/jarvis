@@ -64,6 +64,8 @@ pnpm turbo run lint test build
 cd frontend && cargo tauri dev      # native window; Vite dev server on :5173
 ```
 
+Point the UI at another agent with `VITE_AGENT_WS_URL` (see `frontend/.env.example`).
+
 ## Docs
 - [Architecture](docs/architecture.md) · [decisions (ADRs)](docs/adr/README.md)
 - [Agent state machine](docs/state-machine.md)
