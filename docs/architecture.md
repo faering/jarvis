@@ -24,7 +24,7 @@ flowchart TB
   CAM -->|frames| HAT
   HAT <-->|inference · features| AGENT
   MIC -->|audio| AGENT
-  AGENT <-->|WebSocket| RUST
+  AGENT <-->|WebSocket| UI
   RUST --- UI --- SCR
   AGENT -.->|async · heavy tasks| CLOUD
 
@@ -67,5 +67,12 @@ Selection is env-only: `JARVIS_<ROLE>_BACKEND=openai|mock` plus `_BASE_URL` / `_
 ## Boundaries
 - **Python** = agent/API + tools (Docker). **TS/React** = frontend. **Rust** = Tauri backend only.
 - The display is a **native Tauri app** (not in Docker); it reaches the stack over **WebSocket**.
+
+## WebSocket bridge
+The TS client in the webview (`frontend/src/agent/`) connects to the agent's `/ws`; Rust
+does not proxy it. Frames are envelope v0 `{v, type, id, payload}`. The agent's `hello`
+carries its protocol: a mismatch shows **incompatible** and stops retrying until a manual
+Retry. Ping every 15s (pong within 5s), else reconnect with jittered backoff (≤10s). The
+Tauri CSP `connect-src` must list the agent URL (`VITE_AGENT_WS_URL`).
 
 See [state-machine.md](state-machine.md) for the agent loop, [deploy.md](deploy.md) for delivery.
