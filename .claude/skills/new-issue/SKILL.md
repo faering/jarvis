@@ -16,7 +16,9 @@ Creates a schema-compliant work item. MCP-first. Shape: `_shared/issue-schema.md
 2. Ensure the `type:*` / `prio:*` / `status:*` labels exist (`gh label create` if missing).
 3. `issue_write create` with `title`, the schema-rendered `body` (Summary / Acceptance
    criteria / Architecture decisions touched / Meta), `labels`, and `parent_issue_number`
-   for the sub-issue link.
+   for the sub-issue link. Pass title and body as **raw text** (`&`, `->`), never
+   HTML-escaped; then re-read the stored title and run it through
+   `python3 .claude/skills/_shared/wi_text.py check` (schema *Text encoding* section).
 4. `board-sync` the new issue (add to Project #3 + set Status / Item Type / Priority).
 5. Append it to `github-issues.json` with the returned `number`/`url`/`nodeId` (the mirror
    is git-ignored — don't commit it).

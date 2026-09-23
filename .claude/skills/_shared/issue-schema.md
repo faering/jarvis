@@ -79,6 +79,28 @@ Every work item has:
 - Iteration: <name | none>
 ```
 
+## Text encoding: raw text only, never HTML entities
+
+GitHub stores issue **titles as plain text** and **bodies as raw Markdown**. It does not
+decode HTML entities: a title sent as `A &amp; B` is stored and shown literally. So the
+mirror and everything we send carry **raw text** (`&`, `->`, `<`), never `&amp;`/`&gt;`.
+(ADO differs: its descriptions really are HTML and need an HTML→Markdown conversion.)
+
+Normalize at both ends with [`wi_text.py`](wi_text.py) (stdlib, tested):
+
+```bash
+python3 .claude/skills/_shared/wi_text.py title  < title.txt   # plain-text title
+python3 .claude/skills/_shared/wi_text.py body   < body.md     # Markdown body
+python3 .claude/skills/_shared/wi_text.py check  < text        # exit 1 if entities remain
+python3 .claude/skills/_shared/wi_text.py mirror               # fix github-issues.json in place
+```
+
+It decodes entities (including double-escaped ones like `&amp;amp;`) outside code, and
+leaves fenced blocks and inline code as typed. In bodies it keeps `&lt;` escaped when it
+would open an HTML tag, so the output renders the same. It also converts CRLF to LF.
+Compute `baseSnapshot` hashes over **normalized** text so encoding noise never shows up
+as a change.
+
 ## Local mirror: `github-issues.json`
 
 Envelope:

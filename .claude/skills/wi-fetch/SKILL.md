@@ -19,11 +19,14 @@ MCP-first (`mcp__github__*`).
      the body's `## Summary` / `## Acceptance criteria` / `## Architecture decisions touched`
      / `## Meta` sections (the schema's rendered template).
    - `number`, `nodeId`, `url`, `githubUpdatedAt` ← from the issue.
+   - **Normalize text** (title as plain text; summary / criteria / decisions as Markdown)
+     per the schema's *Text encoding* section, so no HTML entities enter the mirror.
 3. **Merge into `github-issues.json`:** update items matched by `number`, append new ones,
    and leave local-only items (`number: null`) untouched. Set each synced item's
    `baseSnapshot` to its current content hash (the 3-way-merge base) and the top-level
    `syncedAt`.
-4. **Never commit the mirror** (it's git-ignored).
+4. **Final pass:** `python3 .claude/skills/_shared/wi_text.py mirror` (idempotent).
+5. **Never commit the mirror** (it's git-ignored).
 
 ## Notes
 - The authoritative status is the `status:*` label; open/closed state and board field

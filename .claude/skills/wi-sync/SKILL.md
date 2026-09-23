@@ -19,7 +19,8 @@ content). Shape + fields: `_shared/issue-schema.md`.
 
 ## Steps
 1. `wi-fetch` remote state into memory (don't overwrite local yet); compute remote-vs-base
-   and local-vs-base for each item.
+   and local-vs-base for each item. Compare **normalized** text on both sides (schema
+   *Text encoding* section) so entity/CRLF noise never counts as a change.
 2. Apply the table. For **conflicts**, show a field-level diff and resolve by
    `--prefer github|json` (bulk) or interactively per field.
 3. After each push / pull / resolve, rewrite the item's `baseSnapshot`, `githubUpdatedAt`,

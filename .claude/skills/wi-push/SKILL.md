@@ -12,14 +12,20 @@ Pushes local mirror edits up to GitHub. MCP-first; see `_shared/issue-schema.md`
 1. **Ensure labels** for the taxonomy (`type:*`, `prio:*`, `status:*`) exist. Missing ones
    are created with `gh label create` (the `gh` classic token has `repo`). Label creation is
    the one routine op still on `gh`; everything else here is MCP.
-2. **New items** (`number: null`): `issue_write create` with `title`, the schema-rendered
+2. **Normalize before sending** — run `python3 .claude/skills/_shared/wi_text.py mirror`,
+   and pass titles/bodies to MCP as **raw text** (`&`, `->`), never HTML-escaped. See the
+   schema's *Text encoding* section.
+3. **New items** (`number: null`): `issue_write create` with `title`, the schema-rendered
    `body`, `labels`, and `parent_issue_number` (creates the sub-issue link in the same call).
    Write the returned `number`/`url`/`nodeId` back into the mirror.
-3. **Changed items** (have `number`, content differs from `baseSnapshot`): `issue_write
+4. **Changed items** (have `number`, content differs from `baseSnapshot`): `issue_write
    update` — title / body / labels / state.
-4. **Board** — hand new and changed items to `board-sync` (add to Project #3 + set
+5. **Verify** — for each written issue, re-read the stored title and body and pipe them
+   through `wi_text.py check`. If entities show up, fix them with an update before moving
+   on.
+6. **Board** — hand new and changed items to `board-sync` (add to Project #3 + set
    Status / Item Type / Priority).
-5. **Bookkeeping** — update each pushed item's `baseSnapshot` and the top-level `syncedAt`.
+7. **Bookkeeping** — update each pushed item's `baseSnapshot` and the top-level `syncedAt`.
    Never commit the mirror.
 
 ## Notes
