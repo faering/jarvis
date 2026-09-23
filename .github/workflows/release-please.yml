@@ -16,8 +16,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Mirrors the PAT's scopes (docs/release-please-token.md); issues:write is for the
+# autorelease:* labels release-please puts on its PRs.
 permissions:
   contents: write
+  issues: write
   pull-requests: write
 
 jobs:

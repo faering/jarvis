@@ -11,6 +11,7 @@ the required `ci-ok` check never run and the ruleset blocks the merge.
 3. **Permissions:**
    - Contents: Read and write (release commits, tags, releases)
    - Pull requests: Read and write (open and update the release PR)
+   - Issues: Read and write (the `autorelease: pending` / `tagged` labels on release PRs)
    - Metadata: Read (set automatically)
 4. **Expiration:** 90 days. Set a reminder to rotate it.
 5. Add it as a repo secret named **`RELEASE_PLEASE_TOKEN`**:
