@@ -159,13 +159,13 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
 test = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "websockets" },
 ]
@@ -173,7 +173,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.141" },
-    { name = "httpx", marker = "extra == 'test'", specifier = ">=0.28" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "pydantic", specifier = ">=2.13" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.53" },

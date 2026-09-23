@@ -49,6 +49,21 @@ flowchart TB
 3. **Pi 5 CPU** — orchestrator; always-on voice loop (1–4B). Heavy tasks go **async** to
    cloud/larger models, never on the hot path.
 
+## Role backends
+The agent talks to models only through role interfaces (`agent/src/jarvis_agent/backends/`);
+every role has a deterministic mock, the default in tests, CI and the devcontainer.
+
+| Role | Interface | Dev backend | Pi backend |
+|---|---|---|---|
+| LLM | `chat`, `stream` | OpenAI-compatible HTTP → Ollama | Hailo-Ollama¹ |
+| STT | `transcribe` | OpenAI-compatible HTTP → speaches (Whisper) | TBD (Hailo Whisper / CPU) |
+| TTS | `synthesize` | OpenAI-compatible HTTP → speaches (Piper) | Piper (CPU) |
+| Vision | `detect` | mock only | IMX500 / Hailo (#35, #60) |
+
+¹ Speaks Ollama's API; its OpenAI `/v1` compatibility is unverified until tested on the Pi.
+Selection is env-only: `JARVIS_<ROLE>_BACKEND=openai|mock` plus `_BASE_URL` / `_MODEL`
+(see `.env.example`), so dev ↔ Pi is a config change, not a code change.
+
 ## Boundaries
 - **Python** = agent/API + tools (Docker). **TS/React** = frontend. **Rust** = Tauri backend only.
 - The display is a **native Tauri app** (not in Docker); it reaches the stack over **WebSocket**.

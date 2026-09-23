@@ -99,9 +99,6 @@ scope.** So:
 - **Runs on push to `main`** and only *proposes* releases. Nothing is tagged until a human
   merges the release PR, and nothing deploys. It uses the `RELEASE_PLEASE_TOKEN` secret
   ([docs/release-please-token.md](docs/release-please-token.md)) so CI runs on release PRs.
-- Only `agent` is configured for now. Re-add the `frontend` package (release-type `node`,
-  component `app`, extra-files `src-tauri/Cargo.toml` + `src-tauri/tauri.conf.json`,
-  manifest `0.0.0`) when it is scaffolded (#29).
 
 **Linking commits & PRs to their work-item issue** (GitHub is strict — these are the traps):
 - **A closing keyword is required.** Recognized: `close/closes/closed`, `fix/fixes/fixed`,
