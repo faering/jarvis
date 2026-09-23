@@ -23,7 +23,7 @@ env:
   PYTHON_VERSION: "3.14"
   NODE_VERSION: "24"
   # Component hooks run in their own jobs (with their toolchains), not in `lint`.
-  COMPONENT_HOOKS: eslint,rustfmt,clippy,pytest
+  COMPONENT_HOOKS: eslint,vitest,rustfmt,clippy,pytest
 
 jobs:
   detect:
@@ -90,6 +90,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v10.2.0 # upstream publishes no floating major tag
+      - name: uv.lock matches pyproject.toml
+        working-directory: agent
+        run: uv lock --check
       - run: pip install pre-commit
       - name: pytest (locked env via uv)
         run: pre-commit run pytest --hook-stage pre-push --all-files
@@ -97,39 +100,45 @@ jobs:
         working-directory: agent
         run: uv run --frozen --extra test pytest -m container
 
-  # Dormant until frontend/ is scaffolded (#29); finalize the commands then.
   app:
-    name: app (lint, vite build, cargo check)
+    name: app (lint, typecheck, test, build, clippy)
     needs: detect
     if: needs.detect.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+        with:
+          fetch-depth: 0 # tags for scripts/version.sh
+      - uses: pnpm/action-setup@v6 # version from package.json packageManager
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
       - name: Tauri system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install pre-commit
       - run: pnpm install --frozen-lockfile
-      - run: pre-commit run eslint --all-files
+      - name: build version (VITE_APP_VERSION)
+        run: |
+          v="$(scripts/version.sh app)"
+          echo "$v" >> "$GITHUB_ENV"
+          echo "VITE_APP_VERSION=$(sed -n 's/^CANONICAL=//p' <<<"$v")" >> "$GITHUB_ENV"
+      # build before cargo: tauri::generate_context! embeds frontend/dist.
+      - run: pnpm turbo run lint typecheck test build
       - run: pre-commit run rustfmt --all-files
       - run: pre-commit run clippy --all-files
-      - name: build smoke (vite build)
-        run: pnpm --dir frontend build
-      - name: build smoke (cargo check)
-        run: cargo check --manifest-path frontend/src-tauri/Cargo.toml
 
   ci-ok:
     name: ci-ok

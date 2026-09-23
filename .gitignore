@@ -16,6 +16,8 @@ venv/
 node_modules/
 dist/
 .vite/
+.turbo/
+.pnpm-store/
 
 # Rust / Tauri
 target/
