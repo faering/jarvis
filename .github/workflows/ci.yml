@@ -77,9 +77,8 @@ jobs:
           cz check --rev-range
           ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
 
-  # Dormant until agent/ is scaffolded (#24); finalize the install/test commands then.
   agent:
-    name: agent (lint, test, image build)
+    name: agent (tests, container smoke)
     needs: detect
     if: needs.detect.outputs.agent == 'true'
     runs-on: ubuntu-latest
@@ -90,14 +89,13 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install pre-commit ./agent[test]
-      - run: pre-commit run pytest --hook-stage pre-push --all-files
-      - uses: docker/setup-buildx-action@v4
-      - name: build smoke (agent image)
-        uses: docker/build-push-action@v7
-        with:
-          context: agent
-          push: false
+      - uses: astral-sh/setup-uv@v10.2.0 # upstream publishes no floating major tag
+      - run: pip install pre-commit
+      - name: pytest (locked env via uv)
+        run: pre-commit run pytest --hook-stage pre-push --all-files
+      - name: container smoke (build + run image via compose, /health + WebSocket)
+        working-directory: agent
+        run: uv run --frozen --extra test pytest -m container
 
   # Dormant until frontend/ is scaffolded (#29); finalize the commands then.
   app:
