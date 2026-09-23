@@ -25,9 +25,9 @@ live in the TS frontend or in the Rust backend, forwarding to the UI over IPC.
 ## Consequences
 - The client is testable in plain Node against a fake server.
 - `src-tauri` stays a thin shell.
-- The earlier notes that describe Rust as the WebSocket bridge (`.claude/rules/tauri.md` and
-  the `AGENT <-> RUST` edge in `docs/architecture.md`) are corrected by the #30 PR, which
-  implements this decision.
+- Pending: the client itself (#30) isn't merged yet. Until it is, `.claude/rules/tauri.md`
+  and the `AGENT <-> RUST` edge in `docs/architecture.md` still describe Rust as the bridge;
+  the #30 PR corrects both.
 
 ## Revisit when
 The connection needs TLS or pinning, must outlive webview reloads, or the UI moves to a
