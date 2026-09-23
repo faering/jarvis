@@ -1,0 +1,29 @@
+[project]
+name = "jarvis-agent"
+# Managed by release-please (tag agent-vX.Y.Z); do not bump by hand.
+version = "0.0.0"
+description = "Jarvis agent/API layer: WebSocket API for the Tauri app, tools and routing."
+requires-python = ">=3.14"
+dependencies = [
+  "fastapi>=0.141",
+  "uvicorn[standard]>=0.53",
+  "pydantic>=2.13",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=9.1",
+  "httpx>=0.28",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+extend = "../pyproject.toml"
+target-version = "py314"
