@@ -61,7 +61,7 @@ cd frontend && cargo tauri dev      # native window; Vite dev server on :5173
 ```
 
 ## Docs
-- [Architecture](docs/architecture.md)
+- [Architecture](docs/architecture.md) · [decisions (ADRs)](docs/adr/README.md)
 - [Agent state machine](docs/state-machine.md)
 - [Deployment](docs/deploy.md)
 - [GitHub MCP PAT setup](docs/github-mcp-pat.md)

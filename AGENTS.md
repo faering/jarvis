@@ -40,6 +40,8 @@ the day, take notes, manage the calendar, and act as a sparring partner for hobb
 - **Python** — agent/API layer and all tools.
 - **TypeScript/React** — the frontend.
 - **Rust** — strictly the Tauri backend. Never leaks into agent logic.
+- **Frontend = React/TS in the Tauri webview.** A native Rust GUI (Slint) is a possible
+  future swap, only if a hardware spike justifies it ([ADR 0001](docs/adr/0001-frontend-stack.md)).
 
 ## Monorepo & runtime layout
 - Everything except the display (agent, tools) lives in a **Docker Compose monorepo**.
@@ -70,6 +72,9 @@ the day, take notes, manage the calendar, and act as a sparring partner for hobb
   commitizen lints messages only — it does **not** bump versions.
 - **Releases**: automated by **release-please** — see *Releases & commit conventions*.
 - Run CI locally with **`act`** (`scripts/ci-local.sh`) before pushing.
+- **Docs: short, concise, no clutter.** Update the doc a change affects in the same PR, and
+  prefer extending an existing doc over adding a new one. Record architecture decisions,
+  with the alternatives considered, as ADRs in [`docs/adr/`](docs/adr/README.md).
 
 ## Releases & commit conventions (read before every commit)
 Jarvis releases **independently per component** — the two deployable units version and tag
