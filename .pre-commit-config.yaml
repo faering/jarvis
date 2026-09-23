@@ -71,7 +71,7 @@ repos:
         name: pytest (agent)
         language: system
         entry: bash -c 'cd agent && uv run --frozen --extra test pytest -q'
-        files: ^agent/.*\.py$
+        files: ^agent/
         pass_filenames: false
         stages: [pre-push]
 
