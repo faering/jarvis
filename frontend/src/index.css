@@ -51,3 +51,45 @@ body,
   overflow: auto;
   padding: 1rem;
 }
+
+.connection {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: #1e293b;
+  font-size: 0.875rem;
+}
+
+.connection-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.connection-open .connection-dot {
+  background: #22c55e;
+}
+
+.connection-incompatible .connection-dot,
+.connection-closed .connection-dot {
+  background: #ef4444;
+}
+
+.connection-version {
+  color: #94a3b8;
+}
+
+.connection-retry {
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: #38bdf8;
+  color: #0b1020;
+  font: inherit;
+  font-weight: 600;
+}
