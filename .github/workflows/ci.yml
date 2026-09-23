@@ -1,0 +1,147 @@
+name: CI
+
+# PR/push checks. Mark ONLY `ci-ok` as a required status check: it aggregates every job,
+# so adding or skipping jobs never requires editing the branch ruleset.
+#
+# No workflow-level `paths:` filters on purpose — a required check that never runs stays
+# "pending" and blocks the merge. Component jobs instead skip themselves until their code
+# exists (see `detect`), and a skipped job counts as passing in `ci-ok`.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.14"
+  NODE_VERSION: "24"
+  # Component hooks run in their own jobs (with their toolchains), not in `lint`.
+  COMPONENT_HOOKS: eslint,rustfmt,clippy,pytest
+
+jobs:
+  detect:
+    name: detect components
+    runs-on: ubuntu-latest
+    outputs:
+      agent: ${{ steps.detect.outputs.agent }}
+      app: ${{ steps.detect.outputs.app }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: detect
+        run: |
+          echo "agent=$([ -f agent/pyproject.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "app=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  lint:
+    name: lint (repo hooks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags + history for scripts that call git describe
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pre-commit
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: pre-commit stage (format + lint)
+        run: SKIP="$COMPONENT_HOOKS" pre-commit run --all-files --show-diff-on-failure
+      - name: pre-push stage (repo tests)
+        run: SKIP="$COMPONENT_HOOKS" pre-commit run --hook-stage pre-push --all-files
+
+  commits:
+    name: commit messages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install commitizen
+      - name: cz check (every commit in the PR)
+        run: >-
+          cz check --rev-range
+          ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+
+  # Dormant until agent/ is scaffolded (#24); finalize the install/test commands then.
+  agent:
+    name: agent (lint, test, image build)
+    needs: detect
+    if: needs.detect.outputs.agent == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pre-commit ./agent[test]
+      - run: pre-commit run pytest --hook-stage pre-push --all-files
+      - uses: docker/setup-buildx-action@v4
+      - name: build smoke (agent image)
+        uses: docker/build-push-action@v7
+        with:
+          context: agent
+          push: false
+
+  # Dormant until frontend/ is scaffolded (#29); finalize the commands then.
+  app:
+    name: app (lint, vite build, cargo check)
+    needs: detect
+    if: needs.detect.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pre-commit
+      - run: pnpm install --frozen-lockfile
+      - run: pre-commit run eslint --all-files
+      - run: pre-commit run rustfmt --all-files
+      - run: pre-commit run clippy --all-files
+      - name: build smoke (vite build)
+        run: pnpm --dir frontend build
+      - name: build smoke (cargo check)
+        run: cargo check --manifest-path frontend/src-tauri/Cargo.toml
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [detect, lint, commits, agent, app]
+    runs-on: ubuntu-latest
+    steps:
+      - name: all required jobs passed (skipped counts as passed)
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            exit 1
+          fi
