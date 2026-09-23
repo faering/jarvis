@@ -82,3 +82,11 @@ repos:
         files: ^\.claude/skills/.*\.py$
         pass_filenames: false
         stages: [pre-push]
+
+      - id: version-sh-test
+        name: version.sh tests
+        language: system
+        entry: scripts/test_version.sh
+        files: ^scripts/(version|test_version)\.sh$
+        pass_filenames: false
+        stages: [pre-push]

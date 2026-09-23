@@ -137,6 +137,8 @@ contain `+`**, the same build has two forms — sanitized only where required:
 Compute once via `scripts/version.sh <component>` (emits both `CANONICAL` and `DOCKER_TAG`);
 feed `CANONICAL` to Vite (`VITE_APP_VERSION`) + the agent, and `DOCKER_TAG` to
 `docker build -t`. Agent and app then display the identical canonical value.
+No `<component>-v*` tag yet → base `0.0.0`, ahead = total commit count
+(`0.0.0+<count>.g<sha>`). CI checkouts need `fetch-depth: 0`, or there are no tags.
 
 ## CI/CD
 - GitHub Actions → SSH deploy to the Pi (deploys a **matched** agent+app set; see above).
