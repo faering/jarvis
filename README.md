@@ -48,7 +48,6 @@ Jarvis core runs anywhere (Pi, VPS, laptop); what it can do is resolved at start
 config + probing. Ecosystem tools are discovered over **MCP**; pushed events arrive over
 **MQTT**, with Jarvis always connecting outbound.
 
-> [!NOTE]
 > Today only `docs/`, `scripts/`, `.devcontainer/`, `.github/` and `.claude/` exist — the
 > rest lands with the epics on the [board](https://github.com/users/faering/projects/3).
 
