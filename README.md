@@ -51,6 +51,14 @@ config + probing. Ecosystem tools are discovered over **MCP**; pushed events arr
 > Today only `docs/`, `scripts/`, `.devcontainer/`, `.github/` and `.claude/` exist — the
 > rest lands with the epics on the [board](https://github.com/users/faering/projects/3).
 
+## Run the model stack
+
+`docker compose up -d` starts the agent plus local model servers: Ollama (LLM, `qwen2.5:1.5b`)
+and speaches (Whisper STT + Piper TTS), reachable on `jarvis-net` only. The first run pulls
+the images (~12 GB unpacked) and ~1.2 GB of models, so allow several minutes. CPU by default; for an
+NVIDIA GPU, uncomment the `deploy:` snippet in `docker-compose.yml`. Check it end to end
+with `cd agent && uv run --frozen --extra test pytest -m models`.
+
 ## Docs
 - [Architecture](docs/architecture.md)
 - [Agent state machine](docs/state-machine.md)
