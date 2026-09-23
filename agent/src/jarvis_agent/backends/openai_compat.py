@@ -25,7 +25,7 @@ class OpenAILLM:
         body = {"model": self._model, "messages": messages}
         data = _json("llm", await _post("llm", self._client, "chat/completions", json=body))
         try:
-            return data["choices"][0]["message"]["content"]
+            return _text("llm", data["choices"][0]["message"]["content"], data)
         except (KeyError, IndexError, TypeError) as exc:
             raise BackendError("llm", f"unexpected response shape: {data!r}") from exc
 
@@ -42,6 +42,9 @@ class OpenAILLM:
                         yield event
         except httpx.TransportError as exc:
             raise BackendError("llm", f"request failed: {exc!r}") from exc
+        # EOF without the [DONE] sentinel: the reply may be truncated, so don't pass it off
+        # as complete.
+        raise BackendError("llm", "stream ended without [DONE]")
 
 
 class OpenAISTT:
@@ -57,7 +60,7 @@ class OpenAISTT:
         response = await _post("stt", self._client, "audio/transcriptions", files=files, data=form)
         data = _json("stt", response)
         try:
-            return data["text"]
+            return _text("stt", data["text"], data)
         except (KeyError, TypeError) as exc:
             raise BackendError("stt", f"unexpected response shape: {data!r}") from exc
 
@@ -90,9 +93,14 @@ def _parse_sse_line(line: str) -> str | object | None:
         return _DONE
     try:
         choices = json.loads(payload)["choices"]
-        return (choices[0]["delta"].get("content") or None) if choices else None
+        content = choices[0]["delta"].get("content") if choices else None
     except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError) as exc:
         raise BackendError("llm", f"malformed stream event: {payload!r}") from exc
+    if content is None or content == "":
+        return None
+    if not isinstance(content, str):
+        raise BackendError("llm", f"malformed stream event: {payload!r}")
+    return content
 
 
 async def _post(role: str, client: httpx.AsyncClient, path: str, **kwargs: Any) -> httpx.Response:
@@ -113,6 +121,13 @@ async def _raise_for_status(role: str, response: httpx.Response) -> None:
         f"HTTP {response.status_code} from {response.request.url}: {detail}",
         status_code=response.status_code,
     )
+
+
+def _text(role: str, value: Any, data: Any) -> str:
+    """A reply field must be a string (``null`` or other types break the role contract)."""
+    if not isinstance(value, str):
+        raise BackendError(role, f"unexpected response shape: {data!r}")
+    return value
 
 
 def _json(role: str, response: httpx.Response) -> Any:
