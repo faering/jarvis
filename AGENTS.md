@@ -91,9 +91,12 @@ scope.** So:
 - commitizen (`cz commit`, commit-msg hook) enforces the format; it never bumps versions.
 - release-please opens **one release PR per component**; merging it tags + writes that
   component's `CHANGELOG.md` + cuts the GitHub release.
-- **Dormant until scaffolded:** the workflow is `workflow_dispatch`-only until `agent/` and
-  `frontend/` exist (missing package files fail validation). Flip it to `push: main` when
-  the skeleton lands (backlog f3.1 / f4.1).
+- **Runs on push to `main`** and only *proposes* releases. Nothing is tagged until a human
+  merges the release PR, and nothing deploys. It uses the `RELEASE_PLEASE_TOKEN` secret
+  ([docs/release-please-token.md](docs/release-please-token.md)) so CI runs on release PRs.
+- Only `agent` is configured for now. Re-add the `frontend` package (release-type `node`,
+  component `app`, extra-files `src-tauri/Cargo.toml` + `src-tauri/tauri.conf.json`,
+  manifest `0.0.0`) when it is scaffolded (#29).
 
 **Linking commits & PRs to their work-item issue** (GitHub is strict — these are the traps):
 - **A closing keyword is required.** Recognized: `close/closes/closed`, `fix/fixes/fixed`,
