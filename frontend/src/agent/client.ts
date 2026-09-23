@@ -152,7 +152,12 @@ export class AgentClient {
     const hello = asHello(frame.payload);
     const agentVersion = hello?.agent ?? null;
     const agentProtocol = hello?.protocol ?? null;
-    if (!hello || hello.protocol !== PROTOCOL_VERSION) {
+    // Both the envelope version and the announced protocol must match.
+    if (
+      frame.v !== PROTOCOL_VERSION ||
+      !hello ||
+      hello.protocol !== PROTOCOL_VERSION
+    ) {
       this.teardown();
       this.update({ state: "incompatible", agentVersion, agentProtocol });
       return;
