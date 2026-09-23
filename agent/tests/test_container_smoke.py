@@ -84,7 +84,17 @@ def running_container(provenance: dict[str, str]) -> Iterator[None]:
 
     compose = ["docker", "compose", "-f", str(COMPOSE_FILE), "-p", PROJECT]
     try:
-        _run(*compose, "up", "--build", "--detach", "--wait", "--wait-timeout", WAIT_TIMEOUT_S)
+        # Only the agent: the model services are heavy and the agent must start without them.
+        _run(
+            *compose,
+            "up",
+            "--build",
+            "--detach",
+            "--wait",
+            "--wait-timeout",
+            WAIT_TIMEOUT_S,
+            "agent",
+        )
         yield
     finally:
         subprocess.run([*compose, "down", "--volumes"], capture_output=True)
