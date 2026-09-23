@@ -24,8 +24,12 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Container smoke tests build and run Docker: opt-in via `pytest -m container` (CI does).
-addopts = "-ra -m 'not container'"
-markers = ["container: builds and runs the real image via docker compose"]
+# Live model tests need the model stack up: opt-in via `pytest -m models` (not in CI).
+addopts = "-ra -m 'not container and not models'"
+markers = [
+  "container: builds and runs the real image via docker compose",
+  "models: calls the real model servers of the local stack (docker compose up)",
+]
 
 [tool.ruff]
 extend = "../pyproject.toml"
