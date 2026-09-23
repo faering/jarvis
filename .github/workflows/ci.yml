@@ -77,7 +77,6 @@ jobs:
           cz check --rev-range
           ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
 
-  # Dormant until agent/ is scaffolded (#24); finalize the install/test commands then.
   agent:
     name: agent (lint, test, image build)
     needs: detect
@@ -90,8 +89,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install pre-commit ./agent[test]
-      - run: pre-commit run pytest --hook-stage pre-push --all-files
+      - uses: astral-sh/setup-uv@v10
+      - run: pip install pre-commit
+      - name: pytest (locked env via uv)
+        run: pre-commit run pytest --hook-stage pre-push --all-files
       - uses: docker/setup-buildx-action@v4
       - name: build smoke (agent image)
         uses: docker/build-push-action@v7
