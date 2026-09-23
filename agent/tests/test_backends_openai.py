@@ -161,3 +161,39 @@ async def test_unexpected_response_shape_raises() -> None:
 
     with pytest.raises(BackendError, match="unexpected response shape"):
         await OpenAILLM(_client(handler), "m").chat(MESSAGES)
+
+
+@pytest.mark.parametrize("content", [None, 42, ["a"]])
+async def test_chat_non_string_content_raises(content: object) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    with pytest.raises(BackendError, match="unexpected response shape"):
+        await OpenAILLM(_client(handler), "qwen").chat(MESSAGES)
+
+
+async def test_transcribe_non_string_text_raises() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"text": None})
+
+    with pytest.raises(BackendError, match="unexpected response shape"):
+        await OpenAISTT(_client(handler), "whisper").transcribe(b"RIFF")
+
+
+async def test_stream_without_done_raises_after_partial_output() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_sse('{"choices":[{"delta":{"content":"Hel"}}]}'))
+
+    chunks: list[str] = []
+    with pytest.raises(BackendError, match=r"without \[DONE\]"):
+        async for chunk in OpenAILLM(_client(handler), "qwen").stream(MESSAGES):
+            chunks.append(chunk)
+    assert chunks == ["Hel"]
+
+
+async def test_stream_non_string_delta_raises() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_sse('{"choices":[{"delta":{"content":42}}]}'))
+
+    with pytest.raises(BackendError, match="malformed stream event"):
+        _ = [chunk async for chunk in OpenAILLM(_client(handler), "qwen").stream(MESSAGES)]
