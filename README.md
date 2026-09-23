@@ -48,8 +48,16 @@ Jarvis core runs anywhere (Pi, VPS, laptop); what it can do is resolved at start
 config + probing. Ecosystem tools are discovered over **MCP**; pushed events arrive over
 **MQTT**, with Jarvis always connecting outbound.
 
-> Today only `docs/`, `scripts/`, `.devcontainer/`, `.github/` and `.claude/` exist — the
-> rest lands with the epics on the [board](https://github.com/users/faering/projects/3).
+> Today only `docs/`, `scripts/`, `frontend/`, `.devcontainer/`, `.github/` and `.claude/`
+> exist — the rest lands with the epics on the [board](https://github.com/users/faering/projects/3).
+
+## Run the app
+
+```sh
+corepack enable && pnpm install
+pnpm turbo run lint test build
+cd frontend && cargo tauri dev      # native window; Vite dev server on :5173
+```
 
 ## Docs
 - [Architecture](docs/architecture.md)
