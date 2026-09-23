@@ -5,7 +5,8 @@
       "url": "https://api.githubcopilot.com/mcp/",
       "headers": {
         "Authorization": "Bearer ${GITHUB_PAT}",
-        "X-MCP-Toolsets": "context,repos,issues,pull_requests,projects"
+        "X-MCP-Tools": "get_me,issue_read,issue_write,list_issues,search_issues,sub_issue_write,add_issue_comment,get_label,create_pull_request,pull_request_read,update_pull_request,list_pull_requests,search_pull_requests,add_reply_to_pull_request_comment,projects_get,projects_list,projects_write,get_file_contents,list_commits,get_commit,list_branches,list_tags,list_releases,get_latest_release",
+        "X-MCP-Exclude-Tools": "delete_repository,create_repository,fork_repository,merge_pull_request,update_pull_request_branch,delete_file,create_or_update_file,push_files"
       }
     },
     "context7": {

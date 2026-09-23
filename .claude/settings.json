@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__github__merge_pull_request",
+      "mcp__github__update_pull_request_branch",
+      "mcp__github__delete_repository",
+      "mcp__github__delete_file",
+      "mcp__github__push_files",
+      "mcp__github__create_or_update_file",
+      "Bash(gh pr merge:*)",
+      "Bash(gh repo delete:*)"
+    ]
+  }
+}
