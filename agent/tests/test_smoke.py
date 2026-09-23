@@ -48,6 +48,8 @@ def test_ping_pong(ws: WebSocketTestSession) -> None:
         ("not json", "bad_json"),
         ('{"v": 1, "type": "ping"}', "bad_envelope"),
         ('{"v": 0}', "bad_envelope"),
+        ('{"type": "ping"}', "bad_envelope"),  # v is required
+        ('{"v": "0", "type": "ping"}', "bad_envelope"),
         ('{"v": 0, "type": "ping", "extra": true}', "bad_envelope"),
         ('{"v": 0, "type": "nope", "id": "7"}', "unknown_type"),
     ],
@@ -59,6 +61,16 @@ def test_bad_frames_get_error_and_keep_connection(
     reply = ws.receive_json()
     assert reply["type"] == "error"
     assert reply["payload"]["code"] == code
+
+    ws.send_json({"v": 0, "type": "ping", "id": "after"})
+    assert ws.receive_json()["type"] == "pong"
+
+
+def test_binary_frame_gets_error_and_keeps_connection(ws: WebSocketTestSession) -> None:
+    ws.send_bytes(b"\x00\x01")
+    reply = ws.receive_json()
+    assert reply["type"] == "error"
+    assert reply["payload"]["code"] == "bad_frame"
 
     ws.send_json({"v": 0, "type": "ping", "id": "after"})
     assert ws.receive_json()["type"] == "pong"
