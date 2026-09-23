@@ -35,5 +35,6 @@ frontend also be Rust, and should the UI be a native Rust GUI instead of a webvi
   not the UI.
 
 ## Revisit when
-The Slint spike (see the linked spike issue) measures boot-to-UI time, idle RAM, animation
-FPS and touch feel against the webview on real hardware, and the numbers justify switching.
+A hardware test prototypes one screen in Slint on the Pi 5 and compares boot-to-UI time,
+idle RAM, animation FPS and touch feel against the webview, and the numbers justify
+switching. The test is post-v1 and not scheduled yet.

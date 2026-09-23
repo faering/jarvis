@@ -16,7 +16,8 @@ it is.
 - **Tokens:** it runs with a dedicated PAT so CI runs on release PRs (PRs opened with
   `GITHUB_TOKEN` trigger no workflows). The PAT can't merge.
 - **Lockfiles are bumped with the version:** release-please's TOML updater edits the
-  `uv.lock` and `Cargo.lock` entries, and CI runs `uv lock --check`.
+  agent's `uv.lock` entry today, and CI runs `uv lock --check`. The app component and its
+  `Cargo.lock` rule are added by the app shell PR (#29).
 - **Unreleased components start at `0.0.0`,** so the first `feat` releases `0.1.0`.
 - **Build identity:** `scripts/version.sh` derives it from `git describe`.
 
