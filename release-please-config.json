@@ -20,6 +20,24 @@
       "package-name": "jarvis-agent",
       "component": "agent",
       "changelog-path": "CHANGELOG.md"
+    },
+    "frontend": {
+      "release-type": "node",
+      "package-name": "@jarvis/app",
+      "component": "app",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "src-tauri/Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "src-tauri/Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value==='jarvis-app')].version"
+        }
+      ]
     }
   }
 }
