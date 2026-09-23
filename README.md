@@ -48,11 +48,12 @@ Jarvis core runs anywhere (Pi, VPS, laptop); what it can do is resolved at start
 config + probing. Ecosystem tools are discovered over **MCP**; pushed events arrive over
 **MQTT**, with Jarvis always connecting outbound.
 
+> [!NOTE]
 > Today only `docs/`, `scripts/`, `.devcontainer/`, `.github/` and `.claude/` exist — the
 > rest lands with the epics on the [board](https://github.com/users/faering/projects/3).
 
 ## Docs
-- [Architecture](docs/architecture.md)
+- [Architecture](docs/architecture.md) · [decisions (ADRs)](docs/adr/README.md)
 - [Agent state machine](docs/state-machine.md)
 - [Deployment](docs/deploy.md)
 - [GitHub MCP PAT setup](docs/github-mcp-pat.md)
