@@ -19,12 +19,21 @@ async def health() -> dict[str, str]:
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
     await _send(websocket, protocol.hello(__version__))
-    try:
-        while True:
-            reply = _handle(await websocket.receive_text())
+    while True:
+        # receive() rather than receive_text(): a binary frame must yield an error reply,
+        # not a KeyError that kills the connection.
+        message = await websocket.receive()
+        if message["type"] == "websocket.disconnect":
+            return
+        text = message.get("text")
+        if text is None:
+            reply = protocol.error("bad_frame", "binary frames are not supported")
+        else:
+            reply = _handle(text)
+        try:
             await _send(websocket, reply)
-    except WebSocketDisconnect:
-        pass
+        except WebSocketDisconnect:
+            return
 
 
 def _handle(raw: str) -> protocol.Envelope:
