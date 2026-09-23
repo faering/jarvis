@@ -39,3 +39,6 @@ CLAUDE.local.md
 
 # Model weights store (large binaries, fetched at runtime); manifest is tracked
 models/store/
+
+# Claude Code agent worktrees
+.claude/worktrees/
