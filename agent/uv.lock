@@ -167,6 +167,7 @@ dependencies = [
 test = [
     { name = "httpx" },
     { name = "pytest" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -176,6 +177,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.53" },
+    { name = "websockets", marker = "extra == 'test'", specifier = ">=17.1" },
 ]
 provides-extras = ["test"]
 

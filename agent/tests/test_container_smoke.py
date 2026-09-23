@@ -1,17 +1,19 @@
-"""Container integration smoke test.
+"""Container integration smoke test (marker: ``container``).
 
-Unlike test_smoke.py (which drives the in-process ASGI app via FastAPI's TestClient and
-never touches Docker), this builds and runs the *actual* image from docker-compose.yml and
-talks to it over the network. It's what catches a broken CMD, a HEALTHCHECK that never
-turns healthy, or a port/jarvis-net misconfiguration — none of which TestClient can see.
+Unlike test_smoke.py, which drives the in-process ASGI app, this builds and runs the real
+image from docker-compose.yml and talks to it over the network. It catches a broken CMD,
+a HEALTHCHECK that never turns healthy, or a port/jarvis-net misconfiguration.
 
-Requires the Docker CLI with the compose plugin; skipped when unavailable so the rest of
-the suite stays runnable without Docker.
+Opt-in (excluded by default, so the pre-push hook stays fast); CI runs it explicitly:
+    uv run --frozen --extra test pytest -m container
+
+``AGENT_URL`` sets where the container is reached (default ``http://127.0.0.1:8000``, the
+host port). Inside the devcontainer, 127.0.0.1 is the devcontainer itself, so use the
+shared network instead: ``AGENT_URL=http://agent:8000``.
 """
 
-from __future__ import annotations
-
 import json
+import os
 import shutil
 import subprocess
 from collections.abc import Iterator
@@ -19,36 +21,42 @@ from pathlib import Path
 
 import httpx
 import pytest
-import websockets.sync.client  # transitive via uvicorn[standard]; no extra dependency needed
+from websockets.sync.client import connect
 
-pytestmark = pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not available")
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-COMPOSE_FILE = REPO_ROOT / "docker-compose.yml"
+def _compose_available() -> bool:
+    if shutil.which("docker") is None:
+        return False
+    return subprocess.run(["docker", "compose", "version"], capture_output=True).returncode == 0
+
+
+pytestmark = [
+    pytest.mark.container,
+    pytest.mark.skipif(not _compose_available(), reason="docker compose not available"),
+]
+
+COMPOSE_FILE = Path(__file__).resolve().parents[2] / "docker-compose.yml"
 NETWORK = "jarvis-net"
 PROJECT = "jarvis-agent-smoke"
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("AGENT_URL", "http://127.0.0.1:8000").rstrip("/")
 WAIT_TIMEOUT_S = "60"
 
 
-def _run(*args: str) -> subprocess.CompletedProcess[str]:
+def _run(*args: str) -> None:
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"$ {' '.join(args)}\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
-        )
-    return result
+        raise RuntimeError(f"$ {' '.join(args)}\n{result.stdout}\n{result.stderr}")
 
 
 @pytest.fixture(scope="module")
 def running_container() -> Iterator[None]:
-    # jarvis-net is normally created once by the devcontainer's initializeCommand (see
-    # docker-compose.yml); create it here too so this test is self-contained in CI.
-    network_exists = (
+    # jarvis-net normally comes from the devcontainer's initializeCommand; create it if
+    # missing (CI) and remove it again afterwards.
+    created_network = (
         subprocess.run(["docker", "network", "inspect", NETWORK], capture_output=True).returncode
-        == 0
+        != 0
     )
-    if not network_exists:
+    if created_network:
         _run("docker", "network", "create", NETWORK)
 
     compose = ["docker", "compose", "-f", str(COMPOSE_FILE), "-p", PROJECT]
@@ -57,7 +65,7 @@ def running_container() -> Iterator[None]:
         yield
     finally:
         subprocess.run([*compose, "down", "--volumes"], capture_output=True)
-        if not network_exists:
+        if created_network:
             subprocess.run(["docker", "network", "rm", NETWORK], capture_output=True)
 
 
@@ -68,9 +76,13 @@ def test_health_endpoint(running_container: None) -> None:
 
 
 def test_websocket_hello_ping_pong(running_container: None) -> None:
-    with websockets.sync.client.connect(f"{BASE_URL.replace('http', 'ws')}/ws") as ws:
-        hello = json.loads(ws.recv())
-        assert hello["type"] == "hello"
-
+    ws_url = BASE_URL.replace("http", "ws", 1) + "/ws"
+    with connect(ws_url, open_timeout=5) as ws:
+        assert json.loads(ws.recv(timeout=5))["type"] == "hello"
         ws.send(json.dumps({"v": 0, "type": "ping", "id": "smoke"}))
-        assert json.loads(ws.recv()) == {"v": 0, "type": "pong", "id": "smoke", "payload": {}}
+        assert json.loads(ws.recv(timeout=5)) == {
+            "v": 0,
+            "type": "pong",
+            "id": "smoke",
+            "payload": {},
+        }
