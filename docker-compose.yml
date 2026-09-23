@@ -27,13 +27,16 @@ services:
       JARVIS_LLM_BACKEND: ${JARVIS_LLM_BACKEND:-openai}
       JARVIS_LLM_BASE_URL: ${JARVIS_LLM_BASE_URL:-http://ollama:11434/v1}
       JARVIS_LLM_MODEL: ${JARVIS_LLM_MODEL:-qwen2.5:1.5b}
+      JARVIS_LLM_API_KEY: ${JARVIS_LLM_API_KEY:-}
       JARVIS_STT_BACKEND: ${JARVIS_STT_BACKEND:-openai}
       JARVIS_STT_BASE_URL: ${JARVIS_STT_BASE_URL:-http://speaches:8000/v1}
       JARVIS_STT_MODEL: ${JARVIS_STT_MODEL:-Systran/faster-whisper-base.en}
+      JARVIS_STT_API_KEY: ${JARVIS_STT_API_KEY:-}
       JARVIS_TTS_BACKEND: ${JARVIS_TTS_BACKEND:-openai}
       JARVIS_TTS_BASE_URL: ${JARVIS_TTS_BASE_URL:-http://speaches:8000/v1}
       JARVIS_TTS_MODEL: ${JARVIS_TTS_MODEL:-speaches-ai/piper-en_US-lessac-medium}
       JARVIS_TTS_VOICE: ${JARVIS_TTS_VOICE:-lessac}
+      JARVIS_TTS_API_KEY: ${JARVIS_TTS_API_KEY:-}
 
   # LLM server. qwen2.5:1.5b is also in the Hailo-10H model zoo, so dev and Pi run the same
   # model.
