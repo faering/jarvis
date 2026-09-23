@@ -1,0 +1,18 @@
+# Jarvis agent stack. The Tauri display app is native (not in Docker) and connects to
+# ws://127.0.0.1:8000/ws. The devcontainer reaches the agent as ws://agent:8000/ws over
+# the shared external network jarvis-net (created by the devcontainer's initializeCommand).
+name: jarvis
+
+services:
+  agent:
+    build: ./agent
+    image: jarvis-agent:dev
+    restart: unless-stopped
+    ports:
+      # Loopback only: the display runs on the same host; no LAN use case yet.
+      - "127.0.0.1:8000:8000"
+    networks: [jarvis-net]
+
+networks:
+  jarvis-net:
+    external: true
