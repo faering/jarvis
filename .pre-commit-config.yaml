@@ -14,6 +14,8 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # pnpm-lock.yaml is a generated multi-document stream.
+        exclude: ^pnpm-lock\.yaml$
       - id: check-json
         # devcontainer.json is JSONC (allows // comments); skip strict JSON parse.
         exclude: ^\.devcontainer/devcontainer\.json$
@@ -34,7 +36,7 @@ repos:
     rev: v3.9.8
     hooks:
       - id: prettier
-        files: ^frontend/.*\.(ts|tsx|js|jsx|css|scss|html|json|md|ya?ml)$
+        files: ^(frontend|packages)/.*\.(ts|tsx|js|jsx|mjs|css|scss|html|json|md|ya?ml)$
 
   # ---- Conventional Commits ----------------------------------------------
   - repo: https://github.com/commitizen-tools/commitizen
@@ -47,11 +49,19 @@ repos:
   - repo: local
     hooks:
       - id: eslint
-        name: eslint (frontend)
+        name: eslint + tsc (JS workspace)
         language: system
-        entry: bash -c 'cd frontend && npm run --silent lint'
-        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+        entry: pnpm exec turbo run lint typecheck
+        files: ^(frontend|packages)/.*\.(ts|tsx|js|jsx|mjs)$
         pass_filenames: false
+
+      - id: vitest
+        name: vitest (JS workspace)
+        language: system
+        entry: pnpm exec turbo run test
+        files: ^(frontend|packages)/.*\.(ts|tsx|js|jsx|mjs)$
+        pass_filenames: false
+        stages: [pre-push]
 
       - id: rustfmt
         name: cargo fmt (src-tauri)
