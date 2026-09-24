@@ -113,7 +113,9 @@ class SpeechQueue:
 
     async def aclose(self) -> None:
         """Stop speaking, drop everything and cancel the pipeline. Idempotent."""
-        if self._tasks:
+        # Also when never started: turns accepted before start() must still end, or their
+        # wait() would hang. Once cleaned up, a second call does nothing.
+        if self._tasks or self.speaking:
             await self.interrupt()
         tasks, self._tasks = self._tasks, []
         for task in tasks:
