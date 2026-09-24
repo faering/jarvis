@@ -5,7 +5,13 @@ name: jarvis
 
 services:
   agent:
-    build: ./agent
+    build:
+      context: ./agent
+      # Build provenance; set by scripts/compose-build.sh (empty = unversioned dev build).
+      args:
+        VERSION: ${JARVIS_VERSION:-}
+        REVISION: ${JARVIS_REVISION:-}
+        BUILD_TIME: ${JARVIS_BUILD_TIME:-}
     image: jarvis-agent:dev
     restart: unless-stopped
     ports:
