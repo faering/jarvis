@@ -63,6 +63,16 @@ def provenance() -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def running_container(provenance: dict[str, str]) -> Iterator[None]:
+    # Build with the real provenance, as scripts/compose-build.sh does: compose reads these
+    # for the agent's build args. Restored afterwards.
+    build_env = {
+        "JARVIS_VERSION": provenance["CANONICAL"],
+        "JARVIS_REVISION": provenance["REVISION"],
+        "JARVIS_BUILD_TIME": BUILD_TIME,
+    }
+    saved = {key: os.environ.get(key) for key in build_env}
+    os.environ.update(build_env)
+
     # jarvis-net normally comes from the devcontainer's initializeCommand; create it if
     # missing (CI) and remove it again afterwards.
     created_network = (
@@ -74,19 +84,17 @@ def running_container(provenance: dict[str, str]) -> Iterator[None]:
 
     compose = ["docker", "compose", "-f", str(COMPOSE_FILE), "-p", PROJECT]
     try:
-        env = {
-            **os.environ,
-            "JARVIS_VERSION": provenance["CANONICAL"],
-            "JARVIS_REVISION": provenance["REVISION"],
-            "JARVIS_BUILD_TIME": BUILD_TIME,
-        }
-        up = ("up", "--build", "--detach", "--wait", "--wait-timeout", WAIT_TIMEOUT_S)
-        _run(*compose, *up, env=env)
+        _run(*compose, "up", "--build", "--detach", "--wait", "--wait-timeout", WAIT_TIMEOUT_S)
         yield
     finally:
         subprocess.run([*compose, "down", "--volumes"], capture_output=True)
         if created_network:
             subprocess.run(["docker", "network", "rm", NETWORK], capture_output=True)
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def test_health_endpoint(running_container: None) -> None:
