@@ -11,6 +11,7 @@ To change one, add a new ADR that supersedes it and update the old one's status.
 | [0004](0004-independent-component-releases.md) | Independent per-component releases via release-please | Accepted |
 | [0005](0005-local-sqlite-state-store.md) | Local SQLite state store with local-first providers | Accepted |
 | [0006](0006-release-artifacts-and-pi-deploy.md) | Release artifacts + CI/compatibility-gated per-component Pi deploy | Accepted |
+| [0007](0007-protocol-json-schema.md) | One JSON Schema (`@jarvis/protocol`) is the WebSocket contract | Accepted |
 
 Template:
 
