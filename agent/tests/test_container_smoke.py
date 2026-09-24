@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from websockets.sync.client import connect
+from websockets.sync.client import ClientConnection, connect
 
 
 def _compose_available() -> bool:
@@ -113,12 +113,23 @@ def test_health_endpoint(running_container: None) -> None:
     assert response.json() == {"status": "ok"}
 
 
+# Frames the agent pushes on its own (the initial state after hello, voice loop events);
+# a test waiting for the answer to its request skips them.
+EVENT_TYPES = {"state", "transcript", "reply"}
+
+
+def _recv_answer(ws: ClientConnection) -> dict[str, object]:
+    while (frame := json.loads(ws.recv(timeout=5)))["type"] in EVENT_TYPES:
+        pass
+    return frame
+
+
 def test_websocket_hello_ping_pong(running_container: None) -> None:
     ws_url = BASE_URL.replace("http", "ws", 1) + "/ws"
     with connect(ws_url, open_timeout=5) as ws:
         assert json.loads(ws.recv(timeout=5))["type"] == "hello"
         ws.send(json.dumps({"v": 0, "type": "ping", "id": "smoke"}))
-        assert json.loads(ws.recv(timeout=5)) == {
+        assert _recv_answer(ws) == {
             "v": 0,
             "type": "pong",
             "id": "smoke",

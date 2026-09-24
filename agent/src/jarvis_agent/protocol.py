@@ -4,6 +4,15 @@ Every frame is a JSON object ``{"v": 0, "type": str, "id": str | null, "payload"
 ``v`` is required: it is the compatibility discriminator. This module is the Python side
 of the contract; it becomes the source for the shared, versioned protocol schema
 (packages/protocol, #32). Bump ``PROTOCOL_VERSION`` on any breaking change.
+
+Message types (payloads):
+
+- agent -> client: ``hello`` {protocol, agent}, ``pong``, ``error`` {code, message};
+  voice loop events: ``state`` {state}, ``transcript`` {text},
+  ``reply`` {delta, done: false, degraded} while streaming, then
+  ``reply`` {text, done: true, degraded, spoken?} (``spoken: false`` only when the reply
+  could not be queued for speech; absent means it was).
+- client -> agent: ``ping``; ``say`` {text, deep?} (a text utterance for the voice loop).
 """
 
 from typing import Any
@@ -31,6 +40,23 @@ class Envelope(BaseModel):
         return v
 
 
+class SayPayload(BaseModel):
+    """``say``: a typed utterance. ``deep`` asks for the heavy route."""
+
+    # Unknown fields are ignored: a newer app may add optional say fields (additive).
+    model_config = ConfigDict(extra="ignore")
+
+    text: str = Field(strict=True, min_length=1)
+    deep: bool = Field(default=False, strict=True)
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, text: str) -> str:
+        if not text.strip():
+            raise ValueError("text is blank")
+        return text
+
+
 def hello(agent_version: str) -> Envelope:
     """Server greeting sent on connect: lets the client check compatibility."""
     return Envelope(
@@ -51,3 +77,32 @@ def error(code: str, message: str, request_id: str | None = None) -> Envelope:
         id=request_id,
         payload={"code": code, "message": message},
     )
+
+
+def state(value: str) -> Envelope:
+    """The voice loop's state: idle | listening | routing | speaking | offloaded."""
+    return Envelope(v=PROTOCOL_VERSION, type="state", payload={"state": value})
+
+
+def transcript(text: str) -> Envelope:
+    return Envelope(v=PROTOCOL_VERSION, type="transcript", payload={"text": text})
+
+
+def reply(
+    *,
+    delta: str | None = None,
+    text: str | None = None,
+    done: bool,
+    degraded: bool,
+    spoken: bool = True,
+) -> Envelope:
+    """Reply text: ``delta`` frames while streaming, then one ``done`` frame with ``text``.
+    ``spoken: false`` is added only when the reply was not queued for speech."""
+    payload: dict[str, Any] = {"done": done, "degraded": degraded}
+    if not spoken:
+        payload["spoken"] = False
+    if delta is not None:
+        payload["delta"] = delta
+    if text is not None:
+        payload["text"] = text
+    return Envelope(v=PROTOCOL_VERSION, type="reply", payload=payload)
