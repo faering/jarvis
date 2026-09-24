@@ -17,7 +17,7 @@ Then, on the Pi:
 curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker "$USER"   # Docker + Compose v2
 # App deploys install their .deb through this one root-owned script, not arbitrary apt-get.
 curl -fsSL https://raw.githubusercontent.com/faering/jarvis/main/scripts/deploy/jarvis-install-app -o /tmp/jarvis-install-app
-less /tmp/jarvis-install-app    # read it first: it only installs a package named jarvis from ~/jarvis/
+less /tmp/jarvis-install-app    # read it first (needs python3, which Pi OS ships): it only installs a package named jarvis from ~/jarvis/
 sudo install -o root -g root -m 755 /tmp/jarvis-install-app /usr/local/sbin/jarvis-install-app
 echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/jarvis-install-app" | sudo tee /etc/sudoers.d/jarvis-deploy
 sudo chmod 440 /etc/sudoers.d/jarvis-deploy
