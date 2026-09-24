@@ -67,7 +67,12 @@ export function parseEnvelope(raw: string): Envelope | null {
   }
   if (!isRecord(data)) return null;
   const { v, type, id = null, payload = {} } = data;
-  if (typeof v !== "number" || typeof type !== "string" || type === "") {
+  if (
+    typeof v !== "number" ||
+    !Number.isInteger(v) ||
+    typeof type !== "string" ||
+    type === ""
+  ) {
     return null;
   }
   if ((id !== null && typeof id !== "string") || !isRecord(payload)) {

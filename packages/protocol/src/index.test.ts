@@ -77,6 +77,7 @@ describe("parseEnvelope", () => {
 
   it.each([
     ["v", "0"],
+    ["v", 0.5],
     ["type", ""],
     ["id", 1],
     ["payload", []],
