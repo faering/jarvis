@@ -31,7 +31,7 @@ jobs:
       ) &&
       github.actor == 'faering'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write # push fixes to the PR branch
       pull-requests: write
@@ -47,4 +47,4 @@ jobs:
         with:
           # Subscription-backed token; runs bill against the Claude plan, not the API.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--max-turns 30"
+          claude_args: "--max-turns 60"
