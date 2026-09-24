@@ -58,13 +58,13 @@ config + probing. Ecosystem tools are discovered over **MCP**; pushed events arr
 
 ## Run the app
 
+Point the UI at another agent with `VITE_AGENT_WS_URL`; the URL must also be allowed by the CSP in `tauri.conf.json` (see `frontend/.env.example`).
+
 ```sh
 corepack enable && pnpm install
 pnpm turbo run lint test build
 cd frontend && cargo tauri dev      # native window; Vite dev server on :5173
 ```
-
-Point the UI at another agent with `VITE_AGENT_WS_URL`; the URL must also be allowed by the CSP in `tauri.conf.json` (see `frontend/.env.example`).
 
 ## Docs
 - [Architecture](docs/architecture.md) · [decisions (ADRs)](docs/adr/README.md)
