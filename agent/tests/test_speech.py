@@ -303,6 +303,18 @@ async def test_aclose_cancels_everything_without_leaking_tasks() -> None:
     assert asyncio.all_tasks() == before
 
 
+async def test_aclose_ends_turns_accepted_before_start() -> None:
+    events: list[SpeechEvent] = []
+    speech = SpeechQueue(FakeTTS(), FakeSink(), on_event=events.append)
+    turn = speech.say("Queued but never started.")
+    assert speech.speaking
+
+    await speech.aclose()
+    assert not speech.speaking
+    await asyncio.wait_for(speech.wait(turn), timeout=1)
+    assert [e.kind for e in events] == ["interrupted"]
+
+
 def test_rejects_bad_sizes() -> None:
     with pytest.raises(ValueError):
         SpeechQueue(MockTTS(), NullSink(), lookahead=0)
