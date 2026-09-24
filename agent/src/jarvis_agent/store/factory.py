@@ -84,9 +84,10 @@ async def open_state(
     }
     db = await SqliteStore.open(settings.db)
     return State(
-        notes=remote.get("notes") or LocalNotes(db, clock),
-        todo=remote.get("todo") or LocalTodos(db, clock),
-        calendar=remote.get("calendar") or LocalCalendar(db, clock),
+        # Membership, not truthiness: a provider may define __bool__/__len__.
+        notes=remote["notes"] if "notes" in remote else LocalNotes(db, clock),
+        todo=remote["todo"] if "todo" in remote else LocalTodos(db, clock),
+        calendar=remote["calendar"] if "calendar" in remote else LocalCalendar(db, clock),
         kv=LocalKeyValue(db, clock),
         memory=LocalConversationMemory(db, clock),
         notifications=LocalNotificationQueue(db, clock),

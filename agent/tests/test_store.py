@@ -378,6 +378,26 @@ async def test_faelab_provider_overrides_one_domain(tmp_path: Path) -> None:
     await remote_db.aclose()
 
 
+class EmptyNotes(LocalNotes):
+    """A valid provider that is falsey (e.g. a remote collection with ``__len__`` == 0)."""
+
+    def __len__(self) -> int:
+        return 0
+
+
+@pytest.mark.anyio
+async def test_falsey_faelab_provider_is_still_used() -> None:
+    remote_db = await SqliteStore.open(":memory:")
+    remote_notes = EmptyNotes(remote_db)
+    assert not remote_notes
+    state = await open_state(
+        StoreSettings(db=":memory:", notes="faelab"), faelab=FaelabProviders(notes=remote_notes)
+    )
+    assert state.notes is remote_notes
+    await state.aclose()
+    await remote_db.aclose()
+
+
 @pytest.mark.anyio
 async def test_unused_faelab_providers_are_ignored() -> None:
     remote_db = await SqliteStore.open(":memory:")
