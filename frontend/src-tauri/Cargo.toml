@@ -1,6 +1,6 @@
 [package]
 name = "jarvis-app"
-version = "0.0.0"
+version = "0.1.0"
 description = "Jarvis display app (Tauri backend)"
 edition = "2024"
 rust-version = "1.98"
