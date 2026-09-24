@@ -102,3 +102,11 @@ repos:
         files: ^scripts/(version|test_version)\.sh$
         pass_filenames: false
         stages: [pre-push]
+
+      - id: check-compat-test
+        name: check-compat.sh tests
+        language: system
+        entry: scripts/deploy/test_check_compat.sh
+        files: ^scripts/deploy/(check-compat|test_check_compat)\.sh$
+        pass_filenames: false
+        stages: [pre-push]
