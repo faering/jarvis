@@ -16,11 +16,12 @@ from jarvis_agent.loop.source import (
     Utterance,
     Wake,
 )
-from jarvis_agent.loop.voice import VoiceLoop
+from jarvis_agent.loop.voice import LoopBusy, VoiceLoop
 
 __all__ = [
     "AudioSource",
     "Cancel",
+    "LoopBusy",
     "LoopEvent",
     "LoopState",
     "ReplyText",

@@ -41,6 +41,13 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 CONTEXT_TURNS = 10  # recent conversation turns sent to the LLM
 MAX_OFFLOADS = 4  # heavy tasks running or waiting to be spoken
+MAX_INPUTS = 32  # utterances/wakes queued but not yet handled
+
+
+class LoopBusy(Exception):
+    """Too much input is already waiting; the caller should tell the user to retry."""
+
+
 SORRY = "Sorry, I can't answer that right now."
 BUSY = "I'm still working on your earlier requests. Please ask again in a moment."
 
@@ -100,9 +107,12 @@ class VoiceLoop:
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         context_turns: int = CONTEXT_TURNS,
         max_offloads: int = MAX_OFFLOADS,
+        max_inputs: int = MAX_INPUTS,
     ) -> None:
         if max_offloads < 1:
             raise ValueError("max_offloads must be >= 1")
+        if max_inputs < 1:
+            raise ValueError("max_inputs must be >= 1")
         self._router = router
         self._speech = speech
         self._stt = stt
@@ -111,6 +121,8 @@ class VoiceLoop:
         self._context_turns = context_turns
         self._max_offloads = max_offloads
         self._offloads = 0  # dispatched and not yet spoken (running or in _ready)
+        self._max_inputs = max_inputs
+        self._inputs = 0  # input events queued in _inbox, not yet handled
 
         self._inbox: asyncio.Queue[_Message] = asyncio.Queue()
         self._state = LoopState.IDLE
@@ -143,7 +155,11 @@ class VoiceLoop:
         await asyncio.gather(*tasks, return_exceptions=True)
 
     def submit(self, event: SourceEvent) -> None:
-        """Feed one input event (never blocks)."""
+        """Feed one input event (never blocks). Raises ``LoopBusy`` when ``max_inputs``
+        events are already waiting: input is bounded, internal messages are not."""
+        if self._inputs >= self._max_inputs:
+            raise LoopBusy(f"{self._inputs} inputs already waiting")
+        self._inputs += 1
         self._inbox.put_nowait(event)
 
     def say(self, text: str, *, deep: bool = False) -> None:
@@ -170,6 +186,8 @@ class VoiceLoop:
     async def _run(self) -> None:
         while True:
             message = await self._inbox.get()
+            if isinstance(message, (Wake, Cancel, Utterance)):
+                self._inputs -= 1
             try:
                 await self._handle(message)
                 await self._speak_ready()
@@ -311,6 +329,7 @@ class VoiceLoop:
         llm = self._router.hot().backend
         assert llm is not None  # hot() only returns available providers
         turn, spoken = self._begin_turn()
+        dropped = self._speech.dropped  # chunks the queue drops count as not spoken
         self._post(generation, StateChanged(LoopState.SPEAKING))
         parts: list[str] = []
         try:
@@ -327,6 +346,7 @@ class VoiceLoop:
                 return turn
             # Cut off mid-reply: what was already said is kept and remembered.
         self._speech.end_turn(turn)
+        spoken = spoken and self._speech.dropped == dropped
         text = "".join(parts)
         await self._remember(text)
         # done = remembered, and queued for speech unless spoken=False
@@ -366,9 +386,10 @@ class VoiceLoop:
     def _say_turn(self, text: str) -> tuple[int, bool]:
         """Speak ``text`` as its own turn; returns the turn id and whether it was accepted."""
         turn, spoken = self._begin_turn()
+        dropped = self._speech.dropped
         self._speech.feed(turn, text)
         self._speech.end_turn(turn)
-        return turn, spoken
+        return turn, spoken and self._speech.dropped == dropped
 
     def _watch(self, speech_turn: int) -> None:
         async def watch() -> None:
@@ -379,7 +400,10 @@ class VoiceLoop:
 
     async def _pump(self, source: AudioSource) -> None:
         async for event in source.events():
-            self.submit(event)
+            try:
+                self.submit(event)
+            except LoopBusy:
+                log.warning("voice loop: input backlog full, dropped %r", event)
 
     def _spawn(self, work: Coroutine[Any, Any, None], name: str) -> None:
         task = asyncio.create_task(work, name=name)
