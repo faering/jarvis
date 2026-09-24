@@ -49,6 +49,14 @@ async def state(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator
 
 
 @pytest.mark.anyio
+async def test_note_search_folds_unicode_case(state: State) -> None:
+    accented = await state.notes.create("Éclair recipe", "STRASSE")
+    await state.notes.create("Groceries", "milk")
+    assert [n.id for n in await state.notes.find(query="éclair")] == [accented.id]
+    assert [n.id for n in await state.notes.find(query="straße")] == [accented.id]
+
+
+@pytest.mark.anyio
 async def test_notes_crud_and_search(state: State) -> None:
     first = await state.notes.create("Groceries", "milk, eggs")
     second = await state.notes.create("Printer", "calibrate 100% flow")
@@ -58,7 +66,7 @@ async def test_notes_crud_and_search(state: State) -> None:
     assert [n.id for n in await state.notes.find()] == [second.id, first.id]
     assert [n.id for n in await state.notes.find(query="EGGS")] == [first.id]
     assert [n.id for n in await state.notes.find(query="100%")] == [second.id]
-    assert await state.notes.find(query="_") == []  # LIKE wildcards are literal
+    assert await state.notes.find(query="_") == []  # no wildcards: matched literally
     assert await state.notes.find(limit=1) == [second]
 
     edited = await state.notes.update(dataclasses.replace(first, body="milk"))
@@ -351,6 +359,18 @@ async def assert_restore_refused(state: State, snapshot: Path, match: str) -> No
     assert await state.kv.get("live") == "kept"  # live database untouched and usable
     await state.kv.set("live", "still writable")
     assert await state.db.schema_version() == SCHEMA_VERSION
+
+
+@pytest.mark.anyio
+async def test_restore_rejects_empty_or_schemaless_files(state: State, tmp_path: Path) -> None:
+    empty = tmp_path / "empty.db"
+    empty.write_bytes(b"")
+    await assert_restore_refused(state, empty, "not a Jarvis state snapshot")
+    bare = tmp_path / "bare.db"
+    conn = sqlite3.connect(bare)
+    conn.execute("CREATE TABLE unrelated (x)")
+    conn.close()
+    await assert_restore_refused(state, bare, "not a Jarvis state snapshot")
 
 
 @pytest.mark.anyio
