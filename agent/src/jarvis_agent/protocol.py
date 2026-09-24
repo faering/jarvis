@@ -2,8 +2,9 @@
 
 Every frame is a JSON object ``{"v": 0, "type": str, "id": str | null, "payload": {}}``.
 ``v`` is required: it is the compatibility discriminator. This module is the Python side
-of the contract; it becomes the source for the shared, versioned protocol schema
-(packages/protocol, #32). Bump ``PROTOCOL_VERSION`` on any breaking change.
+of the contract whose source of truth is packages/protocol/protocol.schema.json;
+tests/test_protocol_schema.py fails on drift. Bump ``PROTOCOL_VERSION`` (there and here)
+on any breaking change.
 """
 
 from typing import Any
