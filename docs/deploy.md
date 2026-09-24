@@ -57,6 +57,6 @@ flowchart LR
 - **Enable it:** follow the [Pi first-time setup](pi-setup.md) (Tailscale,
   deploy key, the `pi` environment and its secrets, then `PI_DEPLOY_ENABLED=true`).
 - **Pi prerequisites:** Pi OS Trixie or newer (64-bit; the `.deb` is built on Ubuntu 24.04),
-  Docker with Compose v2, reachable over SSH from GitHub runners, passwordless
-  `sudo apt-get` for the deploy user, and a public GHCR package (or `docker login ghcr.io`).
+  Docker with Compose v2, reachable over SSH from GitHub runners, passwordless sudo for
+  `/usr/local/sbin/jarvis-install-app` only (the app installer; see the setup guide), and a public GHCR package (or `docker login ghcr.io`).
   Runtime config goes in `~/jarvis/.env`; deploy state lives in `~/jarvis/state/`.

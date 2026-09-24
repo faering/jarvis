@@ -10,14 +10,20 @@ the Pi one fixed name, e.g. `jarvis.tail1234.ts.net`, that works on any network.
 joins your tailnet for a few minutes (step 3) and SSHes to that name.
 
 ## 1. Prepare the Pi
-Raspberry Pi OS **64-bit, Trixie or newer**. Then, on the Pi:
+Raspberry Pi OS **64-bit, Trixie or newer**, with **SSH enabled**: Raspberry Pi Imager →
+OS customisation → Services → Enable SSH, or on the Pi `sudo systemctl enable --now ssh`.
+Then, on the Pi:
 ```sh
 curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker "$USER"   # Docker + Compose v2
-echo "$USER ALL=(root) NOPASSWD: /usr/bin/apt-get" | sudo tee /etc/sudoers.d/jarvis-deploy
-sudo chmod 440 /etc/sudoers.d/jarvis-deploy   # the app deploy installs its .deb with apt-get
+# App deploys install their .deb through this one root-owned script, not arbitrary apt-get:
+curl -fsSL https://raw.githubusercontent.com/faering/jarvis/main/scripts/deploy/jarvis-install-app -o /tmp/jarvis-install-app
+sudo install -o root -g root -m 755 /tmp/jarvis-install-app /usr/local/sbin/jarvis-install-app
+echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/jarvis-install-app" | sudo tee /etc/sudoers.d/jarvis-deploy
+sudo chmod 440 /etc/sudoers.d/jarvis-deploy
 mkdir -p ~/jarvis && touch ~/jarvis/.env      # runtime config (see .env.example)
 ```
-Log out and in again so the `docker` group applies.
+Log out and in again so the `docker` group applies. Read the installer before installing it:
+it only installs a package named `jarvis` from `~/jarvis/incoming/` or `~/jarvis/app/`.
 
 ## 2. Put the Pi on Tailscale
 1. Create a free account at [tailscale.com](https://tailscale.com). Install Tailscale on your
