@@ -63,8 +63,9 @@ class LocalNotes:
         sql = f"SELECT {NOTE_COLUMNS} FROM notes"
         params: list[object] = []
         if query:
-            sql += " WHERE title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\'"
-            params += [_like(query)] * 2
+            # instr() on casefolded text: Unicode-aware and no wildcards to escape.
+            sql += " WHERE instr(casefold(title), ?) > 0 OR instr(casefold(body), ?) > 0"
+            params += [query.casefold()] * 2
         sql += " ORDER BY updated_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
         return await self._db.run(lambda conn: [_note(r) for r in conn.execute(sql, params)])
@@ -341,11 +342,6 @@ def _span(start: datetime, end: datetime) -> tuple[str, str]:
 
 def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
-
-
-def _like(text: str) -> str:
-    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
 
 
 def _int(value: int | None) -> int:
