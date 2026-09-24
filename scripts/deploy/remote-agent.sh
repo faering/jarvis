@@ -96,11 +96,15 @@ if compose "$next" pull agent && compose "$next" up -d agent && verify "$next" "
   exit 0
 fi
 
-rm -f "$next"
 if [[ -z "$prev_tag" ]]; then
-  log "FAILED and there is no previous release to roll back to"
+  # First deploy: nothing to roll back to. Don't leave a broken agent running
+  # (restart: unless-stopped would keep restarting it).
+  log "FAILED and there is no previous release to roll back to; removing the agent"
+  compose "$next" rm -s -f agent || log "could not remove the failed agent container"
+  rm -f "$next"
   exit 1
 fi
+rm -f "$next"
 log "FAILED; rolling back to $prev_tag"
 compose "$state" up -d agent
 if verify "$state" "$prev_version"; then
