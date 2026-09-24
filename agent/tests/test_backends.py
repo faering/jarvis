@@ -6,9 +6,15 @@ import wave
 import pytest
 from pydantic import ValidationError
 
-from jarvis_agent.backends import BackendSettings, ChatMessage, RoleSettings, build_backends
+from jarvis_agent.backends import (
+    BackendSettings,
+    ChatMessage,
+    HeavyRoleSettings,
+    RoleSettings,
+    build_backends,
+)
 from jarvis_agent.backends.factory import _http_client
-from jarvis_agent.backends.mock import MockSTT, MockTTS, MockVision
+from jarvis_agent.backends.mock import MockLLM, MockSTT, MockTTS, MockVision
 from jarvis_agent.backends.openai_compat import OpenAILLM, OpenAISTT, OpenAITTS
 
 
@@ -110,3 +116,51 @@ def test_api_key_becomes_bearer_header() -> None:
     role = RoleSettings(backend="openai", base_url="http://server/v1", model="m", api_key="k")
     assert _http_client(role).headers["Authorization"] == "Bearer k"
     assert "Authorization" not in _http_client(RoleSettings()).headers
+
+
+def test_heavy_llm_defaults_to_none() -> None:
+    settings = BackendSettings.from_env({})
+    assert settings.heavy_llm == HeavyRoleSettings()
+    assert settings.heavy_llm.backend == "none"
+    assert build_backends(settings).heavy_llm is None
+
+
+def test_env_reads_heavy_llm() -> None:
+    settings = BackendSettings.from_env(
+        {
+            "JARVIS_HEAVY_LLM_BACKEND": "OpenAI",
+            "JARVIS_HEAVY_LLM_BASE_URL": "http://vllm:8000/v1",
+            "JARVIS_HEAVY_LLM_MODEL": "qwen2.5:32b",
+            "JARVIS_HEAVY_LLM_API_KEY": "secret",
+        }
+    )
+    assert settings.heavy_llm.backend == "openai"
+    assert settings.heavy_llm.base_url == "http://vllm:8000/v1"
+    assert settings.heavy_llm.model == "qwen2.5:32b"
+    assert "secret" not in repr(settings)
+    assert settings.llm == RoleSettings()  # the local LLM is untouched
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"JARVIS_HEAVY_LLM_BACKEND": "openai"},
+        {"JARVIS_HEAVY_LLM_BACKEND": "vllm"},
+        {"JARVIS_LLM_BACKEND": "none"},  # only the heavy role may be absent
+    ],
+)
+def test_env_rejects_bad_heavy_llm(env: dict[str, str]) -> None:
+    with pytest.raises(ValidationError):
+        BackendSettings.from_env(env)
+
+
+@pytest.mark.anyio
+async def test_factory_builds_heavy_llm() -> None:
+    openai = HeavyRoleSettings(backend="openai", base_url="http://vllm/v1", model="m", api_key="k")
+    backends = build_backends(BackendSettings(heavy_llm=openai))
+    assert isinstance(backends.heavy_llm, OpenAILLM)
+    assert isinstance(backends.llm, MockLLM)
+    await backends.aclose()
+
+    mock = build_backends(BackendSettings(heavy_llm=HeavyRoleSettings(backend="mock")))
+    assert isinstance(mock.heavy_llm, MockLLM)
