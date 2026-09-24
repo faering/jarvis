@@ -33,7 +33,7 @@ esac
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 deb="$work/jarvis.deb"
-cp -- "$src" "$deb"
+cp -P -- "$src" "$deb" # -P: a symlink swapped in after the check is copied as a link, not followed
 pkg="$(dpkg-deb -f "$deb" Package)"
 [[ "$pkg" == jarvis ]] || {
   echo "refusing $src: package '$pkg' is not 'jarvis'" >&2
