@@ -20,6 +20,6 @@ release's `manifest.json` asset; the Pi records what it runs in `~/jarvis/state/
   the Pi.
 - **`blocked`**: add a pair that shares a protocol but is broken anyway.
 
-Pairs use bare release versions (`1.2.3`). The integration test that should gate releases
-(AGENTS.md) and bundle-level pinning (#66) are still to come; until then, the protocol
-version is the contract.
+Pairs use bare release versions (`1.2.3`). CI's `integration` job runs each side against
+the other's latest release before anything is released ([deploy.md](docs/deploy.md));
+bundle-level pinning (#66) is still to come.
