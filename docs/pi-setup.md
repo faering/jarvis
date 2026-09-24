@@ -31,12 +31,14 @@ updates itself; re-run the three installer lines to take a newer version.
    work/dev PC too.
 2. Admin console → **DNS**: make sure **MagicDNS** is enabled (it is on new tailnets). The
    `*.ts.net` names below depend on it.
-3. Admin console → **Access controls**: add two tags. Let your own devices reach the Pi, and
-   let CI reach it on SSH only. (With the default allow-all policy, `grants` is optional.)
+3. Admin console → **Access controls**: add two tags. Let **only you** reach the Pi, and let CI
+   reach it on SSH only. Replace `you@github` with your Tailscale login (top right of the admin
+   console). The default policy lets every tailnet member reach every device; replace it with
+   these grants if you ever invite anyone.
    ```json
    "tagOwners": { "tag:ci": ["autogroup:admin"], "tag:jarvis": ["autogroup:admin"] },
    "grants": [
-     { "src": ["autogroup:member"], "dst": ["tag:jarvis"], "ip": ["*"] },
+     { "src": ["you@github"], "dst": ["tag:jarvis"], "ip": ["*"] },
      { "src": ["tag:ci"], "dst": ["tag:jarvis"], "ip": ["tcp:22"] }
    ]
    ```
