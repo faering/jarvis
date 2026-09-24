@@ -130,6 +130,10 @@ export class AgentClient {
   private onFrame(raw: string): void {
     const frame = parseEnvelope(raw);
     if (!frame) return;
+    // Every frame carries the envelope version. hello goes through anyway so a mismatch
+    // is reported as `incompatible`; any other frame from another version is ignored
+    // (a foreign pong then lets the heartbeat time out and reconnect).
+    if (frame.type !== "hello" && frame.v !== PROTOCOL_VERSION) return;
     switch (frame.type) {
       case "hello":
         this.onHello(frame);
