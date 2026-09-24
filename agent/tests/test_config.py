@@ -203,4 +203,6 @@ def test_cli_fails_on_invalid_config(capsys: pytest.CaptureFixture[str]) -> None
 
 def test_cli_rejects_unknown_capabilities(capsys: pytest.CaptureFixture[str]) -> None:
     assert main({"JARVIS_CAP_TELEPORT": "on"}, probes={}, out=io.StringIO()) == 1
-    assert "capabilities.teleport: unknown capability" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "capabilities.teleport: unknown capability" in err
+    assert "(from env JARVIS_CAP_TELEPORT)" in err

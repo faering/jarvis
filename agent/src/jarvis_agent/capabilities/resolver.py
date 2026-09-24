@@ -2,7 +2,8 @@
 
 Never raises for an unsatisfiable capability: it is disabled with a reason (for logs, the
 CLI, and later the LLM's self-description, #74). Only config that names an unknown
-capability or provider is an error (``ConfigError``), like any other invalid config.
+capability or provider is an error (``ConfigError``), like any other invalid config, and
+names the layer it came from (``CapabilityConfig.origin()``, recorded by ``load_config()``).
 """
 
 import logging
@@ -101,21 +102,30 @@ class CapabilityReport:
 def check_config(
     settings: Mapping[str, CapabilityConfig], manifests: Sequence[Manifest] = BUILTIN
 ) -> list[str]:
-    """Problems with the ``capabilities`` config section: unknown names or providers."""
+    """Problems with the ``capabilities`` config section: unknown names or providers.
+
+    Each names the layer it came from when the config was built by ``load_config()``.
+    """
     known = {m.name: m for m in manifests}
     problems = []
     for name, cfg in settings.items():
         if (manifest := known.get(name)) is None:
             problems.append(
                 f"capabilities.{name}: unknown capability (known: {', '.join(sorted(known))})"
+                + _from(cfg.origin())
             )
             continue
         if bad := [p for p in cfg.prefer if manifest.provider(p) is None]:
             problems.append(
                 f"capabilities.{name}.prefer: unknown provider {', '.join(bad)} "
                 f"(known: {', '.join(p.name for p in manifest.providers)})"
+                + _from(cfg.origin("prefer"))
             )
     return problems
+
+
+def _from(origin: str | None) -> str:
+    return f" (from {origin})" if origin else ""
 
 
 def resolve(

@@ -102,6 +102,12 @@ def load_config(
     except ValidationError as exc:
         raise ConfigError([_describe(err, merged) for err in exc.errors()]) from None
     config._sources = tuple(sources)
+    for cap, cfg in config.capabilities.items():  # so later checks can name the layer
+        cfg._origins = {
+            path[2]: src
+            for path, (_, src) in merged.items()
+            if path[:2] == ("capabilities", cap) and len(path) > 2
+        }
     return config
 
 

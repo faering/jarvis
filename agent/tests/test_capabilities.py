@@ -1,5 +1,7 @@
 """Capability resolution: preferences, clean disabling with reasons, and config checks."""
 
+from pathlib import Path
+
 import pytest
 
 from jarvis_agent.capabilities import (
@@ -101,6 +103,22 @@ def test_unknown_names_in_config_are_config_errors() -> None:
     assert len(check_config(settings)) == 2
     with pytest.raises(ConfigError, match="unknown provider laser"):
         resolve(available(), settings)
+
+
+def test_unknown_names_name_their_config_layer(tmp_path: Path) -> None:
+    local = tmp_path / "jarvis.toml"
+    local.write_text('[capabilities.vision]\nprefer = ["laser"]\n')
+    config = load_config({"JARVIS_CONFIG": str(local), "JARVIS_CAP_TELEPORT": "on"})
+    with pytest.raises(ConfigError) as exc:
+        resolve(available(), config.capabilities)
+    assert sorted(exc.value.problems) == [
+        "capabilities.teleport: unknown capability "
+        "(known: calendar, heavy_reasoning, notes, todo, vision, voice) "
+        "(from env JARVIS_CAP_TELEPORT)",
+        f"capabilities.vision.prefer: unknown provider laser (known: camera, npu) "
+        f"(from file {local})",
+    ]
+    assert check_config({"teleport": CapabilityConfig()})[0].endswith("voice)")  # built in code
 
 
 def test_home_profile_requires_heavy_reasoning() -> None:
