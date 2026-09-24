@@ -84,4 +84,5 @@ Jarvis keeps its own state in one local SQLite file (`agent/src/jarvis_agent/sto
 - **Faelab-owned, never copied locally:** 3D-print queue, ideas, weather, and notes / todos /
   calendar when `JARVIS_<NOTES|TODO|CALENDAR>_PROVIDER=faelab`.
 - Every domain is an async provider interface; snapshots (SQLite online backup, typically
-  well under 10 MB) cover only the local file and back promote/rollback (#67).
+  well under 10 MB) cover only the local file and back promote/rollback (#67). Additive
+  migrations keep the file readable by the previous release.
