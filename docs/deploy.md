@@ -44,13 +44,16 @@ flowchart LR
 - **Artifacts** (`release-artifacts.yml`, on each published release): `agent-v*` pushes
   `ghcr.io/faering/jarvis-agent:<DOCKER_TAG>` (amd64 + arm64); `app-v*` attaches
   `Jarvis_<version>_{amd64,arm64}.deb`. Each release also gets a `manifest.json` (version,
-  revision, protocol). Nothing builds unless the tagged commit's `ci-ok` passed.
+  revision, protocol). Nothing builds unless the tagged commit's `ci-ok` passed. The
+  agent↔app integration test (#108) will join `ci-ok`, so this gate picks it up as is.
 - **Deploy** (`deploy.yml`) runs after the artifacts, or by hand for one component + version.
   It rolls out only that component, and refuses a pair that fails
   [COMPATIBILITY.md](../COMPATIBILITY.md). The agent must turn healthy and report the
   expected version; the app's installed package version must match.
 - **Rollback** is automatic on a failed rollout (previous image or `.deb`). To go back on
-  purpose, run `deploy` by hand with the older version.
+  purpose, run `deploy` by hand with the older version. A failed *first* agent deploy
+  removes the container instead. The app `.deb` is staged in `~/jarvis/incoming/` and
+  becomes `~/jarvis/app/current.deb` only once installed (the old one → `previous.deb`).
 - **Enable it:** secrets `PI_SSH_HOST`, `PI_SSH_USER`, `PI_SSH_KEY` (private key) and
   `PI_SSH_KNOWN_HOSTS` (`ssh-keyscan <host>`) on the `pi` environment. Add yourself as a
   required reviewer there, then set the repo variable `PI_DEPLOY_ENABLED=true`. Optional:
