@@ -144,6 +144,8 @@ feed `CANONICAL` to Vite (`VITE_APP_VERSION`) + the agent, and `DOCKER_TAG` to
 `docker build -t`. Agent and app then display the identical canonical value.
 No `<component>-v*` tag yet → base `0.0.0`, ahead = total commit count
 (`0.0.0+<count>.g<sha>`). CI checkouts need `fetch-depth: 0`, or there are no tags.
+The agent serves it at `GET /version`; build the image with it via `scripts/compose-build.sh`.
+Unset `VITE_APP_VERSION` → `vite.config.ts` runs `scripts/version.sh app` itself.
 
 ## CI/CD
 - GitHub Actions → SSH deploy to the Pi (deploys a **matched** agent+app set; see above).
