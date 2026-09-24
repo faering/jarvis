@@ -15,8 +15,9 @@ contract must live in one versioned place both sides are checked against (AGENTS
   `PROTOCOL_VERSION`, the `Envelope` model and the message types the agent sends or handles.
 - **The package ships TS source, with no build step.** Vite, tsc and vitest compile it in the
   app, so `pnpm tauri build` and `pnpm dev` work without running turbo first.
-- The app's release manifest reads its protocol version from the schema, and falls back to
-  the old TS file at tags from before #32.
+- The app's release manifest reads `PROTOCOL_VERSION` from `packages/protocol/src/index.ts`
+  (falling back to `frontend/src/agent/protocol.ts` for older tags). The package's tests keep
+  that constant equal to the schema's `v`, so the manifest still reflects the source of truth.
 
 ## Alternatives
 - **Validator or schema libraries (ajv, zod, pydantic-generated TS):** rejected for now. They
