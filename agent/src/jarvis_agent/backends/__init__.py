@@ -13,7 +13,7 @@ from jarvis_agent.backends.base import (
     Detection,
     Vision,
 )
-from jarvis_agent.backends.config import BackendSettings, RoleSettings
+from jarvis_agent.backends.config import BackendSettings, HeavyRoleSettings, RoleSettings
 from jarvis_agent.backends.factory import Backends, build_backends
 
 __all__ = [
@@ -25,6 +25,7 @@ __all__ = [
     "Backends",
     "ChatMessage",
     "Detection",
+    "HeavyRoleSettings",
     "RoleSettings",
     "Vision",
     "build_backends",
