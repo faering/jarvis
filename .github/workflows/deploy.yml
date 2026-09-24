@@ -83,6 +83,7 @@ jobs:
       COMPONENT: ${{ needs.plan.outputs.component }}
       VERSION: ${{ needs.plan.outputs.version }}
       GH_TOKEN: ${{ github.token }}
+      TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
     steps:
       # Default branch: the current deploy scripts, compose file and compatibility.json.
       - uses: actions/checkout@v7
@@ -100,9 +101,20 @@ jobs:
           [[ -n "$KEY" ]] || missing+=(PI_SSH_KEY)
           [[ -n "$KNOWN_HOSTS" ]] || missing+=(PI_SSH_KNOWN_HOSTS)
           if ((${#missing[@]})); then
-            echo "::error::PI_DEPLOY_ENABLED is true but secrets are missing: ${missing[*]} (docs/deploy.md)."
+            echo "::error::PI_DEPLOY_ENABLED is true but secrets are missing: ${missing[*]} (docs/setup-gh-environment.md)."
             exit 1
           fi
+
+      # Reach the Pi on whatever network it is on, by its Tailscale name. Skipped when no
+      # Tailscale secrets are set (a Pi with a public SSH endpoint). docs/setup-gh-environment.md
+      - name: join the tailnet
+        if: env.TS_OAUTH_CLIENT_ID != ''
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
 
       - name: release manifest
         run: |
