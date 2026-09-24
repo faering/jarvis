@@ -13,7 +13,8 @@ class Segmenter:
     """Buffers text deltas and emits chunks at sentence ends.
 
     A long sentence is also cut at a clause boundary (``, ; :`` or a dash) once it reaches
-    ``min_clause_chars``, and hard-cut at the last space before ``max_chars``. Chunks with
+    ``min_clause_chars``, and hard-cut at the last whitespace before ``max_chars`` unless a
+    natural boundary comes first, so no chunk exceeds ``max_chars``. Chunks with
     nothing speakable (bare punctuation) are dropped.
     """
 
@@ -53,12 +54,12 @@ class Segmenter:
         )
         if clause:
             cuts.append(clause.end())
-        if cuts:
-            return min(cuts)
         if len(buffer) > self._max:
-            space = buffer.rfind(" ", 0, self._max)
-            return space + 1 if space > 0 else self._max
-        return None
+            # A candidate like the others, so a boundary past max_chars cannot hide it. Every
+            # natural cut ends just after whitespace, so one within the limit ties or wins.
+            space = max(buffer.rfind(ws, 0, self._max) for ws in " \t\n")
+            cuts.append(space + 1 if space > 0 else self._max)
+        return min(cuts, default=None)
 
 
 def _append_speakable(chunks: list[str], chunk: str) -> None:
