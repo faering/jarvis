@@ -10,7 +10,8 @@ Message types (payloads):
 - agent -> client: ``hello`` {protocol, agent}, ``pong``, ``error`` {code, message};
   voice loop events: ``state`` {state}, ``transcript`` {text},
   ``reply`` {delta, done: false, degraded} while streaming, then
-  ``reply`` {text, done: true, degraded}.
+  ``reply`` {text, done: true, degraded, spoken?} (``spoken: false`` only when the reply
+  could not be queued for speech; absent means it was).
 - client -> agent: ``ping``; ``say`` {text, deep?} (a text utterance for the voice loop).
 """
 
@@ -87,10 +88,18 @@ def transcript(text: str) -> Envelope:
 
 
 def reply(
-    *, delta: str | None = None, text: str | None = None, done: bool, degraded: bool
+    *,
+    delta: str | None = None,
+    text: str | None = None,
+    done: bool,
+    degraded: bool,
+    spoken: bool = True,
 ) -> Envelope:
-    """Reply text: ``delta`` frames while streaming, then one ``done`` frame with ``text``."""
+    """Reply text: ``delta`` frames while streaming, then one ``done`` frame with ``text``.
+    ``spoken: false`` is added only when the reply was not queued for speech."""
     payload: dict[str, Any] = {"done": done, "degraded": degraded}
+    if not spoken:
+        payload["spoken"] = False
     if delta is not None:
         payload["delta"] = delta
     if text is not None:

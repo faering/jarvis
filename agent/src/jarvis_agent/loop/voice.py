@@ -1,14 +1,21 @@
 """The voice loop: one actor task owns the state machine of docs/state-machine.md.
 
 Every input (source events, finished turns, offloaded results, finished speech) goes
-through one inbox and is handled in order, so state changes never race. The slow parts run
-beside it and report back through the inbox:
+through one inbox and is handled in order, so state changes never race: only the actor
+changes the state or emits events. The slow parts run beside it and report back through
+the inbox:
 
 - the *turn* task: STT, memory, routing, then streaming the local LLM into the
-  ``SpeechQueue`` (hot) or ``router.offload()`` (heavy). A barge-in cancels it.
+  ``SpeechQueue`` (hot) or asking the actor to offload (heavy). It posts its state changes
+  and UI events tagged with its generation; the actor applies them in order and drops
+  those of a turn superseded by a barge-in. A barge-in also cancels it.
 - offloaded heavy tasks: their reply is spoken once no turn is being produced and the user
-  is not mid-utterance, queued behind any speech still playing.
+  is not mid-utterance, queued behind any speech still playing. At most ``max_offloads``
+  are in flight (running or waiting to be spoken); past that, Jarvis says ``BUSY``.
 - speech watchers: Speaking -> Idle once the queue has played everything.
+
+A reply the ``SpeechQueue`` refused (its ``max_turns`` limit) is still shown and remembered,
+but its ``done`` event says ``spoken=False``.
 """
 
 import asyncio
@@ -33,13 +40,31 @@ DEFAULT_SYSTEM_PROMPT = (
     "plain and conversational."
 )
 CONTEXT_TURNS = 10  # recent conversation turns sent to the LLM
+MAX_OFFLOADS = 4  # heavy tasks running or waiting to be spoken
 SORRY = "Sorry, I can't answer that right now."
+BUSY = "I'm still working on your earlier requests. Please ask again in a moment."
 
 
 @dataclass(frozen=True)
 class _TurnDone:
     generation: int
     speech_turn: int | None  # the speech turn it produced, if any
+
+
+@dataclass(frozen=True)
+class _FromTurn:
+    """A state change or UI event from the turn task, applied by the actor."""
+
+    generation: int
+    event: LoopEvent
+
+
+@dataclass(frozen=True)
+class _Offload:
+    """The turn task routed heavy: the actor dispatches it (or says it is busy)."""
+
+    generation: int
+    messages: list[ChatMessage]
 
 
 @dataclass(frozen=True)
@@ -52,7 +77,7 @@ class _SpeechDone:
     pass
 
 
-type _Message = SourceEvent | _TurnDone | _Offloaded | _SpeechDone
+type _Message = SourceEvent | _TurnDone | _FromTurn | _Offload | _Offloaded | _SpeechDone
 type Listener = Callable[[LoopEvent], None]
 
 
@@ -61,6 +86,8 @@ class VoiceLoop:
 
     Conversation turns are appended to ``memory``; the last ``context_turns`` of them are the
     LLM context (for the hot path also trimmed to the routing policy's ``max_hot_chars``).
+    At most ``max_offloads`` heavy tasks are in flight (running, or finished and waiting to
+    be spoken); a heavy utterance past that gets the spoken ``BUSY`` reply instead.
     """
 
     def __init__(
@@ -72,13 +99,18 @@ class VoiceLoop:
         *,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         context_turns: int = CONTEXT_TURNS,
+        max_offloads: int = MAX_OFFLOADS,
     ) -> None:
+        if max_offloads < 1:
+            raise ValueError("max_offloads must be >= 1")
         self._router = router
         self._speech = speech
         self._stt = stt
         self._memory = memory
         self._system_prompt = system_prompt
         self._context_turns = context_turns
+        self._max_offloads = max_offloads
+        self._offloads = 0  # dispatched and not yet spoken (running or in _ready)
 
         self._inbox: asyncio.Queue[_Message] = asyncio.Queue()
         self._state = LoopState.IDLE
@@ -159,26 +191,54 @@ class VoiceLoop:
                 self._turn = asyncio.create_task(
                     self._reply(message, self._generation), name="voice-turn"
                 )
+            case _FromTurn(generation, event):
+                if generation != self._generation:
+                    return  # superseded by a barge-in
+                if isinstance(event, StateChanged):
+                    self._set(event.state)
+                else:
+                    self._emit(event)
+            case _Offload(generation, messages):
+                if generation == self._generation:
+                    self._offload(messages)
             case _TurnDone(generation, speech_turn):
                 if generation != self._generation:
                     return  # superseded by a barge-in
                 self._turn = None
                 if speech_turn is not None:
                     self._watch(speech_turn)
+                self._idle_if_silent()
             case _Offloaded(handle):
-                if not handle.cancelled():
-                    if (error := handle.exception()) is not None:
-                        log.error("voice loop: offloaded task failed: %s", error)
-                        self._ready.append(None)
-                    else:
-                        self._ready.append(handle.result())
+                if handle.cancelled():
+                    self._offloads -= 1
+                elif (error := handle.exception()) is not None:
+                    log.error("voice loop: offloaded task failed: %s", error)
+                    self._ready.append(None)
+                else:
+                    self._ready.append(handle.result())
             case _SpeechDone():
-                if (
-                    self._state is LoopState.SPEAKING
-                    and self._turn is None
-                    and not self._speech.speaking
-                ):
-                    self._set(LoopState.IDLE)
+                self._idle_if_silent()
+
+    def _idle_if_silent(self) -> None:
+        """Speaking -> Idle once no turn is being produced and nothing is left to play."""
+        if self._state is LoopState.SPEAKING and self._turn is None and not self._speech.speaking:
+            self._set(LoopState.IDLE)
+
+    def _offload(self, messages: list[ChatMessage]) -> None:
+        """Routing -> Offloaded -> Idle: dispatch a heavy task, unless too many are in flight
+        (then say so at once rather than pile up unbounded work)."""
+        if self._offloads >= self._max_offloads:
+            log.warning("voice loop: %d heavy tasks in flight, refusing another", self._offloads)
+            turn, spoken = self._say_turn(BUSY)
+            self._set(LoopState.SPEAKING)
+            self._emit(ReplyText(text=BUSY, done=True, spoken=spoken))
+            self._watch(turn)
+            return
+        self._set(LoopState.OFFLOADED)
+        self._offloads += 1
+        handle = self._router.offload(Task(messages, route=Route.HEAVY))
+        handle.add_done_callback(lambda done: self._inbox.put_nowait(_Offloaded(done)))
+        self._set(LoopState.IDLE)  # dispatched: the loop stays responsive
 
     async def _barge_in(self) -> None:
         """A new turn wins: drop the reply being produced and silence speech."""
@@ -199,40 +259,44 @@ class VoiceLoop:
             and self._state not in (LoopState.LISTENING, LoopState.ROUTING)
         ):
             reply = self._ready.popleft()
+            self._offloads -= 1
             text, degraded = (SORRY, True) if reply is None else (reply.text, reply.degraded)
-            turn = self._speech.say(text)  # queued behind speech still playing
+            turn, spoken = self._say_turn(text)  # queued behind speech still playing
             self._set(LoopState.SPEAKING)
             if reply is not None:
                 await self._remember(text)
-            self._emit(ReplyText(text=text, done=True, degraded=degraded))
+            self._emit(ReplyText(text=text, done=True, degraded=degraded, spoken=spoken))
             self._watch(turn)
 
     # ---- one turn ----------------------------------------------------------------------
 
     async def _reply(self, utterance: Utterance, generation: int) -> None:
+        """The turn task. It never changes the state itself: state changes and events go
+        through the inbox (``_post``), so the actor applies them in order."""
         speech_turn: int | None = None
         try:
             text = await self._transcribe(utterance)
             if not text:
-                self._set(LoopState.IDLE)  # nothing was said
+                self._post(generation, StateChanged(LoopState.IDLE))  # nothing was said
             else:
-                self._emit(Transcript(text))
+                self._post(generation, Transcript(text))
                 await self._memory.append("user", text)
                 # Route on the new utterance alone: a long conversation history must not
                 # push every later turn onto the heavy route.
                 user: list[ChatMessage] = [{"role": "user", "content": text}]
                 if self._router.route(Task(user, deep=utterance.deep)) is Route.HEAVY:
-                    self._offload(await self._context(budget=None))
+                    messages = await self._context(budget=None)
+                    self._inbox.put_nowait(_Offload(generation, messages))
                 else:
                     budget = self._router.policy.max_hot_chars
-                    speech_turn = await self._stream(await self._context(budget))
+                    speech_turn = await self._stream(generation, await self._context(budget))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # STT, store or no local LLM: say so rather than go silent
             log.error("voice loop: turn failed: %s", exc)
-            speech_turn = self._speech.say(SORRY)
-            self._set(LoopState.SPEAKING)
-            self._emit(ReplyText(text=SORRY, done=True))
+            speech_turn, spoken = self._say_turn(SORRY)
+            self._post(generation, StateChanged(LoopState.SPEAKING))
+            self._post(generation, ReplyText(text=SORRY, done=True, spoken=spoken))
         self._inbox.put_nowait(_TurnDone(generation, speech_turn))
 
     async def _transcribe(self, utterance: Utterance) -> str:
@@ -242,36 +306,31 @@ class VoiceLoop:
         text = await self._stt.transcribe(utterance.audio, audio_format=utterance.audio_format)
         return text.strip()
 
-    def _offload(self, messages: list[ChatMessage]) -> None:
-        self._set(LoopState.OFFLOADED)
-        handle = self._router.offload(Task(messages, route=Route.HEAVY))
-        handle.add_done_callback(lambda done: self._inbox.put_nowait(_Offloaded(done)))
-        self._set(LoopState.IDLE)  # dispatched: the loop stays responsive
-
-    async def _stream(self, messages: list[ChatMessage]) -> int:
+    async def _stream(self, generation: int, messages: list[ChatMessage]) -> int:
         """Hot path: stream the local LLM into speech as it generates."""
         llm = self._router.hot().backend
         assert llm is not None  # hot() only returns available providers
-        turn = self._speech.begin_turn()
-        self._set(LoopState.SPEAKING)
+        turn, spoken = self._begin_turn()
+        self._post(generation, StateChanged(LoopState.SPEAKING))
         parts: list[str] = []
-        failed = False
         try:
             async for delta in llm.stream(messages):
                 parts.append(delta)
                 self._speech.feed(turn, delta)
-                self._emit(ReplyText(delta=delta))
+                self._post(generation, ReplyText(delta=delta))
         except BackendError as exc:
             log.error("voice loop: local LLM failed: %s", exc)
-            failed = True
-            if not parts:
-                parts.append(SORRY)
+            if not parts:  # nothing said yet: apologise, and don't remember the apology
                 self._speech.feed(turn, SORRY)
+                self._speech.end_turn(turn)
+                self._post(generation, ReplyText(text=SORRY, done=True, spoken=spoken))
+                return turn
+            # Cut off mid-reply: what was already said is kept and remembered.
         self._speech.end_turn(turn)
         text = "".join(parts)
-        if not failed:
-            await self._remember(text)
-        self._emit(ReplyText(text=text, done=True))  # done = spoken (queued) and remembered
+        await self._remember(text)
+        # done = remembered, and queued for speech unless spoken=False
+        self._post(generation, ReplyText(text=text, done=True, spoken=spoken))
         return turn
 
     async def _context(self, budget: int | None) -> list[ChatMessage]:
@@ -292,6 +351,24 @@ class VoiceLoop:
             await self._memory.append("assistant", reply)
         except StoreError as exc:
             log.error("voice loop: could not store the reply: %s", exc)
+
+    def _post(self, generation: int, event: LoopEvent) -> None:
+        """From the turn task: have the actor apply ``event`` (see ``_FromTurn``)."""
+        self._inbox.put_nowait(_FromTurn(generation, event))
+
+    def _begin_turn(self) -> tuple[int, bool]:
+        """``SpeechQueue.begin_turn`` plus whether it was accepted: past ``max_turns`` the
+        queue refuses the turn (counting it in ``dropped_turns``) and ignores its text."""
+        dropped = self._speech.dropped_turns
+        turn = self._speech.begin_turn()
+        return turn, self._speech.dropped_turns == dropped
+
+    def _say_turn(self, text: str) -> tuple[int, bool]:
+        """Speak ``text`` as its own turn; returns the turn id and whether it was accepted."""
+        turn, spoken = self._begin_turn()
+        self._speech.feed(turn, text)
+        self._speech.end_turn(turn)
+        return turn, spoken
 
     def _watch(self, speech_turn: int) -> None:
         async def watch() -> None:

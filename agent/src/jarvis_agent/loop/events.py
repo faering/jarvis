@@ -30,12 +30,15 @@ class Transcript:
 class ReplyText:
     """Reply text for the UI. Streaming frames carry ``delta`` with ``done=False``; the last
     frame of a reply carries the full ``text`` with ``done=True``. An offloaded reply is a
-    single ``done`` frame. ``degraded``: the heavy model was wanted but could not answer."""
+    single ``done`` frame. ``degraded``: the heavy model was wanted but could not answer.
+    ``spoken`` (``done`` frames): False if the speech queue refused the reply (too many
+    turns queued), so it was shown but not said."""
 
     delta: str | None = None
     text: str | None = None
     done: bool = False
     degraded: bool = False
+    spoken: bool = True
 
 
 type LoopEvent = StateChanged | Transcript | ReplyText
