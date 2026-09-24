@@ -179,10 +179,16 @@ def _connect(path: str) -> sqlite3.Connection:
         raise StoreError(f"cannot open state store {path!r}: {exc}") from exc
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+    # Unicode case folding for searches (LIKE only folds ASCII).
+    conn.create_function("casefold", 1, _casefold, deterministic=True)
     if path != MEMORY:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")  # durable across crashes in WAL mode
     return conn
+
+
+def _casefold(value: object) -> object:
+    return value.casefold() if isinstance(value, str) else value
 
 
 def _rollback(conn: sqlite3.Connection) -> None:
@@ -299,6 +305,10 @@ def _restore(conn: sqlite3.Connection, src: Path) -> None:
         problems = [row[0] for row in candidate.execute("PRAGMA integrity_check")]
         if problems != ["ok"]:
             raise StoreError(f"{what} is corrupt: {'; '.join(problems[:3])}")
+        # A zero-byte or schema-less file passes integrity_check as an empty database and
+        # would migrate into a fresh, empty store. snapshot() never writes schema version 0.
+        if candidate.execute("PRAGMA user_version").fetchone()[0] == 0:
+            raise StoreError(f"{what} is not a Jarvis state snapshot (empty or no schema)")
         _migrate(candidate, what)
         candidate.backup(conn)
     except sqlite3.DatabaseError as exc:
