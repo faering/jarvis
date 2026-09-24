@@ -1,13 +1,14 @@
-"""ASGI entrypoint: health check and the WebSocket the Tauri app connects to."""
+"""ASGI entrypoint: health, version and the WebSocket the Tauri app connects to."""
 
 import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from jarvis_agent import __version__, protocol
+from jarvis_agent import protocol
+from jarvis_agent.version import BuildInfo, build_info
 
-app = FastAPI(title="Jarvis agent", version=__version__)
+app = FastAPI(title="Jarvis agent", version=build_info()["version"])
 
 
 @app.get("/health")
@@ -15,10 +16,16 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/version")
+async def version() -> BuildInfo:
+    """Build provenance; ``version`` is the same canonical string the app displays."""
+    return build_info()
+
+
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
-    await _send(websocket, protocol.hello(__version__))
+    await _send(websocket, protocol.hello(build_info()["version"]))
     while True:
         # receive() rather than receive_text(): a binary frame must yield an error reply,
         # not a KeyError that kills the connection.

@@ -4,9 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketTestSession
 
-from jarvis_agent import __version__
 from jarvis_agent.main import app
 from jarvis_agent.protocol import PROTOCOL_VERSION
+from jarvis_agent.version import build_info
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def test_hello_on_connect(client: TestClient) -> None:
             "v": 0,
             "type": "hello",
             "id": None,
-            "payload": {"protocol": PROTOCOL_VERSION, "agent": __version__},
+            "payload": {"protocol": PROTOCOL_VERSION, "agent": build_info()["version"]},
         }
 
 
