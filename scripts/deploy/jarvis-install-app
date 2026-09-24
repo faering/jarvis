@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Root-owned installer for the Jarvis app .deb. docs/pi-setup.md installs it as
+# /usr/local/sbin/jarvis-install-app, and sudoers lets the deploy user run ONLY this
+# (not arbitrary apt-get): it installs a package named "jarvis" from the deploy user's
+# ~/jarvis/{incoming,app}/, and nothing else.
+#
+# Usage:  sudo -n /usr/local/sbin/jarvis-install-app <path-to-jarvis.deb>
+set -euo pipefail
+
+[[ $# -eq 1 ]] || {
+  echo "usage: $(basename "$0") <jarvis .deb>" >&2
+  exit 2
+}
+# Test hooks only; never honoured as root (sudo also resets the environment).
+if [[ $EUID -eq 0 ]]; then unset JARVIS_INSTALL_HOME APT_GET; fi
+user="${SUDO_USER:-$(id -un)}"
+home="${JARVIS_INSTALL_HOME:-$(getent passwd "$user" | cut -d: -f6)}"
+
+# The path must be literally <home>/jarvis/{incoming,app}/<name>.deb: no "..", no deeper dirs.
+case "$1" in
+  "$home/jarvis/incoming/"* | "$home/jarvis/app/"*) ;;
+  *)
+    echo "refusing $1: not under $home/jarvis/{incoming,app}/" >&2
+    exit 1
+    ;;
+esac
+rel="${1#"$home"/jarvis/}"
+sub="${rel%%/*}" name="${rel#*/}"
+if [[ "$name" == */* || "$name" == .* || "$name" != *.deb ]]; then
+  echo "refusing $1: expected a .deb directly in $home/jarvis/$sub/" >&2
+  exit 1
+fi
+
+# Copy the bytes into a root-owned private file. Every path component below the (root-owned)
+# /home is opened with O_NOFOLLOW, relative to its parent's descriptor, and the source must be
+# a regular file: a symlink or directory swap by the deploy user can't redirect the copy.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+deb="$work/jarvis.deb"
+python3 - "$home" "$sub" "$name" "$deb" <<'PY'
+import os, shutil, stat, sys
+home, sub, name, dest = sys.argv[1:]
+nofollow = os.O_RDONLY | os.O_NOFOLLOW
+fd = os.open(home, nofollow | os.O_DIRECTORY)
+for part in ("jarvis", sub):
+    fd = os.open(part, nofollow | os.O_DIRECTORY, dir_fd=fd)
+src = os.open(name, nofollow, dir_fd=fd)
+if not stat.S_ISREG(os.fstat(src).st_mode):
+    sys.exit(f"refusing {name}: not a regular file")
+with os.fdopen(src, "rb") as fsrc, open(dest, "xb") as fdst:
+    shutil.copyfileobj(fsrc, fdst)
+PY
+[[ -f "$deb" && ! -L "$deb" ]] || exit 1
+
+pkg="$(dpkg-deb -f "$deb" Package)"
+[[ "$pkg" == jarvis ]] || {
+  echo "refusing $1: package '$pkg' is not 'jarvis'" >&2
+  exit 1
+}
+"${APT_GET:-apt-get}" install -y --allow-downgrades "$deb"

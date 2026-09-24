@@ -77,5 +77,5 @@ with `cd agent && uv run --frozen --extra test pytest -m models`.
 ## Docs
 - [Architecture](docs/architecture.md) · [decisions (ADRs)](docs/adr/README.md)
 - [Agent state machine](docs/state-machine.md)
-- [Deployment](docs/deploy.md)
+- [Deployment](docs/deploy.md) · [Pi first-time setup](docs/pi-setup.md)
 - [GitHub MCP PAT setup](docs/github-mcp-pat.md)

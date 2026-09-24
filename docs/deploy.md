@@ -54,11 +54,9 @@ flowchart LR
   purpose, run `deploy` by hand with the older version. A failed *first* agent deploy
   removes the container instead. The app `.deb` is staged in `~/jarvis/incoming/` and
   becomes `~/jarvis/app/current.deb` only once installed (the old one → `previous.deb`).
-- **Enable it:** secrets `PI_SSH_HOST`, `PI_SSH_USER`, `PI_SSH_KEY` (private key) and
-  `PI_SSH_KNOWN_HOSTS` (`ssh-keyscan <host>`) on the `pi` environment. Add yourself as a
-  required reviewer there, then set the repo variable `PI_DEPLOY_ENABLED=true`. Optional:
-  `PI_SSH_PORT`.
+- **Enable it:** follow the [Pi first-time setup](pi-setup.md) (Tailscale,
+  deploy key, the `pi` environment and its secrets, then `PI_DEPLOY_ENABLED=true`).
 - **Pi prerequisites:** Pi OS Trixie or newer (64-bit; the `.deb` is built on Ubuntu 24.04),
-  Docker with Compose v2, reachable over SSH from GitHub runners, passwordless
-  `sudo apt-get` for the deploy user, and a public GHCR package (or `docker login ghcr.io`).
+  Docker with Compose v2, reachable over SSH from GitHub runners, passwordless sudo for
+  `/usr/local/sbin/jarvis-install-app` only (the app installer; see the setup guide), and a public GHCR package (or `docker login ghcr.io`).
   Runtime config goes in `~/jarvis/.env`; deploy state lives in `~/jarvis/state/`.
