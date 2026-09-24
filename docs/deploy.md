@@ -39,3 +39,23 @@ flowchart LR
 - The hardware inference path (Hailo · IMX500 · GPIO) is **Pi-only** — never in the devcontainer.
 - **Deploy** = GitHub Actions → SSH to the Pi with a compatibility-matched agent+app set.
 - **Stretch:** Jarvis detects a new release and self-deploys, with a human approving.
+
+## Release artifacts and deploy
+- **Artifacts** (`release-artifacts.yml`, on each published release): `agent-v*` pushes
+  `ghcr.io/faering/jarvis-agent:<DOCKER_TAG>` (amd64 + arm64); `app-v*` attaches
+  `Jarvis_<version>_{amd64,arm64}.deb`. Each release also gets a `manifest.json` (version,
+  revision, protocol). Nothing builds unless the tagged commit's `ci-ok` passed.
+- **Deploy** (`deploy.yml`) runs after the artifacts, or by hand for one component + version.
+  It rolls out only that component, and refuses a pair that fails
+  [COMPATIBILITY.md](../COMPATIBILITY.md). The agent must turn healthy and report the
+  expected version; the app's installed package version must match.
+- **Rollback** is automatic on a failed rollout (previous image or `.deb`). To go back on
+  purpose, run `deploy` by hand with the older version.
+- **Enable it:** secrets `PI_SSH_HOST`, `PI_SSH_USER`, `PI_SSH_KEY` (private key) and
+  `PI_SSH_KNOWN_HOSTS` (`ssh-keyscan <host>`) on the `pi` environment. Add yourself as a
+  required reviewer there, then set the repo variable `PI_DEPLOY_ENABLED=true`. Optional:
+  `PI_SSH_PORT`.
+- **Pi prerequisites:** Pi OS Trixie or newer (64-bit; the `.deb` is built on Ubuntu 24.04),
+  Docker with Compose v2, reachable over SSH from GitHub runners, passwordless
+  `sudo apt-get` for the deploy user, and a public GHCR package (or `docker login ghcr.io`).
+  Runtime config goes in `~/jarvis/.env`; deploy state lives in `~/jarvis/state/`.
