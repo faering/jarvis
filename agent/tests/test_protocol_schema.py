@@ -96,8 +96,9 @@ def test_schema_routes_every_message_type() -> None:
 
 
 def test_agent_message_types_are_in_schema() -> None:
-    """A type the agent sends or handles must be in the schema (and vice versa)."""
-    assert _agent_message_types() == DEFS.keys()
+    """Every type the agent sends or handles must be in the schema. The schema may list
+    types ahead of the agent (added there first), so this is a subset check."""
+    assert _agent_message_types() <= DEFS.keys()
 
 
 @pytest.mark.parametrize(
