@@ -1,0 +1,8 @@
+{
+  "extends": "@jarvis/config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": [],
+    "resolveJsonModule": true
+  },
+  "include": ["src"]
+}
