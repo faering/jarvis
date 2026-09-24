@@ -8,7 +8,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from jarvis_agent import protocol
-from jarvis_agent.loop import LoopEvent, ReplyText, StateChanged, Transcript, VoiceLoop
+from jarvis_agent.loop import LoopBusy, LoopEvent, ReplyText, StateChanged, Transcript, VoiceLoop
 from jarvis_agent.runtime import Runtime, lifespan
 from jarvis_agent.version import BuildInfo, build_info
 
@@ -92,7 +92,10 @@ def _say(request: protocol.Envelope, loop: VoiceLoop | None) -> protocol.Envelop
         return protocol.error("bad_payload", str(exc.errors(include_url=False)), request.id)
     if loop is None:
         return protocol.error("unavailable", "the voice loop is not running", request.id)
-    loop.say(say.text, deep=say.deep)
+    try:
+        loop.say(say.text, deep=say.deep)
+    except LoopBusy:
+        return protocol.error("busy", "too many requests are waiting; try again", request.id)
     return None
 
 
