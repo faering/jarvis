@@ -22,6 +22,9 @@ services:
       # Loopback only: the display runs on the same host; no LAN use case yet.
       - "127.0.0.1:8000:8000"
     networks: [jarvis-net]
+    volumes:
+      # State store (JARVIS_STATE_DB, default /data/jarvis.db): survives recreation.
+      - jarvis-state:/data
     environment:
       # Role backends (docs/architecture.md); override any of these in .env.
       JARVIS_LLM_BACKEND: ${JARVIS_LLM_BACKEND:-openai}
@@ -96,6 +99,7 @@ services:
       start_period: 300s
 
 volumes:
+  jarvis-state:
   ollama-models:
   speaches-models:
 
