@@ -33,6 +33,13 @@ def client(agent_env: None) -> Iterator[TestClient]:
 def ws(client: TestClient) -> Iterator[WebSocketTestSession]:
     with client.websocket_connect("/ws") as session:
         assert session.receive_json()["type"] == "hello"
+        # Then the loop's current state, so a new client doesn't wait for the next change.
+        assert session.receive_json() == {
+            "v": 0,
+            "type": "state",
+            "id": None,
+            "payload": {"state": "idle"},
+        }
         yield session
 
 
