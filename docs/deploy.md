@@ -44,8 +44,11 @@ flowchart LR
 - **Artifacts** (`release-artifacts.yml`, on each published release): `agent-v*` pushes
   `ghcr.io/faering/jarvis-agent:<DOCKER_TAG>` (amd64 + arm64); `app-v*` attaches
   `Jarvis_<version>_{amd64,arm64}.deb`. Each release also gets a `manifest.json` (version,
-  revision, protocol). Nothing builds unless the tagged commit's `ci-ok` passed. The
-  agent↔app integration test (#108) will join `ci-ok`, so this gate picks it up as is.
+  revision, protocol). Nothing builds unless the tagged commit's `ci-ok` passed.
+- **Integration test** (`integration` job in `ci-ok`; `scripts/integration-test.sh`, add
+  `IT_NETWORK=1` in the devcontainer): the app's real `AgentClient` against the agent
+  container, plus each side against the other's latest release (agent: GHCR image, else
+  built from its tag).
 - **Deploy** (`deploy.yml`) runs after the artifacts, or by hand for one component + version.
   It rolls out only that component, and refuses a pair that fails
   [COMPATIBILITY.md](../COMPATIBILITY.md). The agent must turn healthy and report the
