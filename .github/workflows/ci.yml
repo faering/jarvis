@@ -140,10 +140,38 @@ jobs:
       - run: pre-commit run rustfmt --all-files
       - run: pre-commit run clippy --all-files
 
+  # The app's real AgentClient against the live agent container, plus each side's latest
+  # release (see scripts/integration-test.sh). In ci-ok, so it gates PRs, release PRs and
+  # (via release-artifacts' ci-gate) the release builds.
+  integration:
+    name: integration (agent x app, incl. released counterparts)
+    needs: detect
+    if: needs.detect.outputs.agent == 'true' && needs.detect.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # pull the released agent image from GHCR
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # release tags + version.sh
+      - uses: pnpm/action-setup@v6 # version from package.json packageManager
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: log in to GHCR (best effort; unpullable images fall back to a source build)
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: docker login ghcr.io -u "$ACTOR" --password-stdin <<<"$TOKEN" || true
+      - run: scripts/integration-test.sh
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [detect, lint, commits, agent, app]
+    needs: [detect, lint, commits, agent, app, integration]
     runs-on: ubuntu-latest
     steps:
       - name: all required jobs passed (skipped counts as passed)

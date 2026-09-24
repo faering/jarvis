@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # WebSocket protocol version a component speaks, read from its source (run at the release tag).
 #
-# Usage:  scripts/release/protocol-version.sh <agent|app>
+# Usage:  scripts/release/protocol-version.sh <agent|app> [source root]
+#   source root defaults to this checkout; pass e.g. an exported release tag's tree.
 # Prints an integer, or "none" when the component has no protocol client/server yet.
 set -euo pipefail
 
-[[ $# -eq 1 ]] || {
-  echo "usage: $(basename "$0") <agent|app>" >&2
+[[ $# -eq 1 || $# -eq 2 ]] || {
+  echo "usage: $(basename "$0") <agent|app> [source root]" >&2
   exit 2
 }
-root="$(git rev-parse --show-toplevel)"
+root="${2:-$(git rev-parse --show-toplevel)}"
 
 case "$1" in
   agent) files=("$root/agent/src/jarvis_agent/protocol.py") ;;
