@@ -27,3 +27,13 @@ stateDiagram-v2
 ## Invariants
 - Speaking never blocks the loop (producer/consumer queue).
 - A barge-in during Speaking jumps straight back to Listening.
+
+## Speech output
+`jarvis_agent.speech.SpeechQueue` implements Speaking.
+- **Producers** call sync `begin_turn`/`feed`/`end_turn`/`say`; they never await TTS.
+- **Segmentation:** text is cut at sentence ends (and clauses in long sentences), so TTS
+  starts before the reply is complete. The next chunk is synthesized while one plays.
+- **Barge-in:** `interrupt()` stops the sink, cancels in-flight TTS and drops all queued
+  turns; chunks carry a turn id, so stale audio never plays.
+- **Backpressure:** pending text is bounded; when full, new chunks are dropped and logged
+  rather than blocking the loop. Audio output is the `AudioSink` seam (Pi speaker later).
