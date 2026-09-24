@@ -342,6 +342,7 @@ class VoiceLoop:
             if not parts:  # nothing said yet: apologise, and don't remember the apology
                 self._speech.feed(turn, SORRY)
                 self._speech.end_turn(turn)
+                spoken = spoken and self._speech.dropped == dropped
                 self._post(generation, ReplyText(text=SORRY, done=True, spoken=spoken))
                 return turn
             # Cut off mid-reply: what was already said is kept and remembered.

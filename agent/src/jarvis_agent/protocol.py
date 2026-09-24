@@ -43,7 +43,8 @@ class Envelope(BaseModel):
 class SayPayload(BaseModel):
     """``say``: a typed utterance. ``deep`` asks for the heavy route."""
 
-    model_config = ConfigDict(extra="forbid")
+    # Unknown fields are ignored: a newer app may add optional say fields (additive).
+    model_config = ConfigDict(extra="ignore")
 
     text: str = Field(strict=True, min_length=1)
     deep: bool = Field(default=False, strict=True)
