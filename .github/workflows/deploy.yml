@@ -94,19 +94,25 @@ jobs:
           USER_: ${{ secrets.PI_SSH_USER }}
           KEY: ${{ secrets.PI_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          TS_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
         run: |
+          # Tailscale is optional, but its two secrets come as a pair.
+          if [[ -n "$TS_OAUTH_CLIENT_ID" && -z "$TS_SECRET" ]] || [[ -z "$TS_OAUTH_CLIENT_ID" && -n "$TS_SECRET" ]]; then
+            echo "::error::Set both TS_OAUTH_CLIENT_ID and TS_OAUTH_SECRET, or neither (docs/pi-setup.md)."
+            exit 1
+          fi
           missing=()
           [[ -n "$HOST" ]] || missing+=(PI_SSH_HOST)
           [[ -n "$USER_" ]] || missing+=(PI_SSH_USER)
           [[ -n "$KEY" ]] || missing+=(PI_SSH_KEY)
           [[ -n "$KNOWN_HOSTS" ]] || missing+=(PI_SSH_KNOWN_HOSTS)
           if ((${#missing[@]})); then
-            echo "::error::PI_DEPLOY_ENABLED is true but secrets are missing: ${missing[*]} (docs/setup-gh-environment.md)."
+            echo "::error::PI_DEPLOY_ENABLED is true but secrets are missing: ${missing[*]} (docs/pi-setup.md)."
             exit 1
           fi
 
       # Reach the Pi on whatever network it is on, by its Tailscale name. Skipped when no
-      # Tailscale secrets are set (a Pi with a public SSH endpoint). docs/setup-gh-environment.md
+      # Tailscale secrets are set (a Pi with a public SSH endpoint). docs/pi-setup.md
       - name: join the tailnet
         if: env.TS_OAUTH_CLIENT_ID != ''
         uses: tailscale/github-action@v4
