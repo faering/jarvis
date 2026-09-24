@@ -10,11 +10,23 @@ set -euo pipefail
   exit 2
 }
 root="$(git rev-parse --show-toplevel)"
+schema="$root/packages/protocol/protocol.schema.json"
 
 case "$1" in
   agent) files=("$root/agent/src/jarvis_agent/protocol.py") ;;
-  # packages/protocol (#32) supersedes the app-local copy once it lands.
-  app) files=("$root/packages/protocol/src/index.ts" "$root/frontend/src/agent/protocol.ts") ;;
+  app)
+    # The app speaks @jarvis/protocol, whose schema is the source of truth (#32).
+    if [[ -f "$schema" ]]; then
+      v="$(jq -er '.properties.v.const | numbers' "$schema")" || {
+        echo "properties.v.const not found in $schema" >&2
+        exit 1
+      }
+      echo "$v"
+      exit 0
+    fi
+    # Tags before #32 kept the contract in the app itself.
+    files=("$root/frontend/src/agent/protocol.ts")
+    ;;
   *)
     echo "unknown component: $1" >&2
     exit 2
