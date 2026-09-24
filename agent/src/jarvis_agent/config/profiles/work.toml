@@ -1,0 +1,8 @@
+# Work Pi: voice only. No NPU or camera, so don't probe for them.
+
+[hardware]
+hailo = "off"
+imx500 = "off"
+
+[capabilities]
+vision = "off"
