@@ -115,7 +115,7 @@ jobs:
       # Tailscale secrets are set (a Pi with a public SSH endpoint). docs/pi-setup.md
       - name: join the tailnet
         if: env.TS_OAUTH_CLIENT_ID != ''
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0 (pinned: runs with deploy secrets)
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
