@@ -1,0 +1,5 @@
+{
+  "$comment": "Deploy compatibility gate, read by scripts/deploy/check-compat.sh. See COMPATIBILITY.md.",
+  "known_good": [],
+  "blocked": []
+}

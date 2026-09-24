@@ -1,0 +1,26 @@
+# Jarvis agent stack ON THE PI. deploy.yml copies this file to $JARVIS_DIR on the Pi
+# (default ~/jarvis) and runs it with the released GHCR image; nothing is built here.
+# Mirrors the root docker-compose.yml service, minus `build:`.
+#
+#   docker compose --env-file state/agent.env up -d agent
+#
+# state/agent.env is written by scripts/deploy/remote-agent.sh and pins AGENT_IMAGE_TAG
+# (a DOCKER_TAG from scripts/version.sh). Runtime config (JARVIS_* backends, API keys)
+# goes in .env next to this file, same keys as the repo's .env.example.
+name: jarvis
+
+services:
+  agent:
+    image: ${AGENT_IMAGE:-ghcr.io/faering/jarvis-agent}:${AGENT_IMAGE_TAG:?set by state/agent.env}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      # Loopback only: the display runs on the same host; no LAN use case yet.
+      - "127.0.0.1:${AGENT_PORT:-8000}:8000"
+    networks: [jarvis-net]
+
+networks:
+  jarvis-net:
+    external: true
