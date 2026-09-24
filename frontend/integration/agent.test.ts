@@ -86,6 +86,10 @@ function spyClient(options: ClientModule.AgentClientOptions = {}) {
   return { client, sockets, sent, received };
 }
 
+/** Frame types this suite exchanges on a raw socket. The agent may also push events at
+ * any time (e.g. the voice loop's `state` right after `hello`); those are ignored here. */
+const RAW_TYPES = new Set(["hello", "error", "pong"]);
+
 /** A plain WebSocket to the agent, for frames the AgentClient never sends. */
 async function rawSocket() {
   const socket = new WebSocket(url!);
@@ -93,6 +97,7 @@ async function rawSocket() {
   const waiters: ((frame: Frame) => void)[] = [];
   socket.addEventListener("message", (event) => {
     const frame = JSON.parse(String(event.data)) as Frame;
+    if (!RAW_TYPES.has(frame.type)) return;
     const waiter = waiters.shift();
     if (waiter) waiter(frame);
     else queue.push(frame);
