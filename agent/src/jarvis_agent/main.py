@@ -102,8 +102,10 @@ def _event(event: LoopEvent) -> protocol.Envelope:
             return protocol.state(state.value)
         case Transcript(text):
             return protocol.transcript(text)
-        case ReplyText(delta, text, done, degraded):
-            return protocol.reply(delta=delta, text=text, done=done, degraded=degraded)
+        case ReplyText(delta, text, done, degraded, spoken):
+            return protocol.reply(
+                delta=delta, text=text, done=done, degraded=degraded, spoken=spoken
+            )
 
 
 def _post(outbox: asyncio.Queue[protocol.Envelope], envelope: protocol.Envelope) -> None:

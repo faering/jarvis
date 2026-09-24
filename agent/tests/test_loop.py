@@ -24,7 +24,7 @@ from jarvis_agent.loop import (
     VoiceLoop,
     Wake,
 )
-from jarvis_agent.loop.voice import DEFAULT_SYSTEM_PROMPT, SORRY, _fit
+from jarvis_agent.loop.voice import BUSY, DEFAULT_SYSTEM_PROMPT, SORRY, _fit
 from jarvis_agent.routing import ComputeLayer, Provider, Reply, Router, Task
 from jarvis_agent.speech import SpeechQueue
 from jarvis_agent.store import State, StoreSettings, open_state
@@ -94,6 +94,17 @@ class FailingLLM:
     async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         raise BackendError("llm", "HTTP 503", status_code=503)
         yield ""  # pragma: no cover - makes this an async generator
+
+
+class PartialLLM:
+    """Streams ``First part. `` and then fails."""
+
+    async def chat(self, messages: list[ChatMessage]) -> str:
+        raise BackendError("llm", "HTTP 503", status_code=503)
+
+    async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
+        yield "First part. "
+        raise BackendError("llm", "connection reset")
 
 
 class TextTTS:
@@ -172,7 +183,13 @@ class Harness:
 
 @asynccontextmanager
 async def running(
-    llm: LLM, heavy: LLM | None = None, *, sink: Sink | None = None, stt: MockSTT | None = None
+    llm: LLM,
+    heavy: LLM | None = None,
+    *,
+    sink: Sink | None = None,
+    stt: MockSTT | None = None,
+    max_turns: int = 16,
+    max_offloads: int = 4,
 ) -> AsyncIterator[Harness]:
     state = await open_state(StoreSettings(db=":memory:"))
     router = Router(
@@ -190,9 +207,9 @@ async def running(
 
     router.offload = spy  # type: ignore[method-assign]
     sink = sink or Sink()
-    speech = SpeechQueue(TextTTS(), sink)
+    speech = SpeechQueue(TextTTS(), sink, max_turns=max_turns)
     speech.start()
-    loop = VoiceLoop(router, speech, stt or MockSTT(), state.memory)
+    loop = VoiceLoop(router, speech, stt or MockSTT(), state.memory, max_offloads=max_offloads)
     events = Recorder()
     loop.subscribe(events)
     loop.start()
@@ -346,6 +363,99 @@ async def test_local_failure_says_sorry_and_is_not_remembered() -> None:
         assert h.events.replies == [ReplyText(text=SORRY, done=True)]
         assert h.sink.played == [SORRY.encode()]
         assert await h.memory() == [("user", "hi")]
+
+
+async def test_offloads_are_bounded_and_the_overflow_is_told_busy() -> None:
+    heavy = GatedLLM()
+    async with running(ScriptLLM(), heavy, max_offloads=1) as h:
+        h.loop.say("plan my week", deep=True)
+        await h.events.until(lambda: h.events.states[-1:] == [IDLE])
+        h.loop.say("and my month", deep=True)
+        await h.events.until_idle_after(1)
+
+        assert len(h.handles) == 1  # the second heavy task was never started
+        assert h.events.replies == [ReplyText(text=BUSY, done=True)]
+        assert b" ".join(h.sink.played) == BUSY.encode()  # spoken sentence by sentence
+        assert ("assistant", BUSY) not in await h.memory()
+
+        # Once the first result has been spoken, heavy work is accepted again.
+        heavy.gate.set()
+        await h.events.until_idle_after(2)
+        assert h.events.replies[1].text == "heavy answer"
+        h.loop.say("and my year", deep=True)
+        await h.events.until(lambda: len(h.handles) == 2)
+
+
+async def test_reply_refused_by_the_speech_queue_is_not_claimed_spoken() -> None:
+    heavy = GatedLLM()
+    sink = Sink(hold=True)
+    async with running(ScriptLLM(["Hot answer."]), heavy, sink=sink, max_turns=1) as h:
+        h.loop.say("plan my week", deep=True)
+        await h.events.until(lambda: h.events.states[-1:] == [IDLE])
+        h.loop.say("hi")  # its speech holds the only speech turn
+        await sink.until_played(b"Hot answer.")
+        await h.events.until(lambda: len(h.events.replies) == 1)
+
+        heavy.gate.set()
+        await h.events.until(lambda: len(h.events.replies) == 2)
+
+        heavy_reply = h.events.replies[1]
+        assert heavy_reply == ReplyText(text="heavy answer", done=True, spoken=False)
+        assert h.sink.played == [b"Hot answer."]
+        # Shown and remembered, just not said.
+        assert ("assistant", "heavy answer") in await h.memory()
+
+
+async def test_partial_reply_is_remembered_when_the_stream_fails() -> None:
+    async with running(PartialLLM()) as h:
+        h.loop.say("hi")
+        await h.events.until_idle_after(1)
+
+        assert h.events.replies == [ReplyText(text="First part. ", done=True)]
+        assert h.sink.played == [b"First part."]
+        assert await h.memory() == [("user", "hi"), ("assistant", "First part. ")]
+
+
+async def test_only_the_actor_changes_the_state() -> None:
+    heavy = GatedLLM()
+    heavy.gate.set()
+    async with running(ScriptLLM(["a. ", "b."]), heavy, stt=MockSTT(" ")) as h:
+        callers: list[bool] = []
+        set_state = h.loop._set
+
+        def spy(state: LoopState) -> None:
+            callers.append(asyncio.current_task() is h.loop._runner)
+            set_state(state)
+
+        h.loop._set = spy  # type: ignore[method-assign]
+        h.loop.say("hot")
+        await h.events.until_idle_after(1)
+        h.loop.say("heavy", deep=True)
+        await h.events.until_idle_after(2)
+        h.loop.submit(Utterance(audio=b"noise"))  # empty transcript
+        await h.events.until(lambda: h.events.states[-3:] == [LISTENING, ROUTING, IDLE])
+
+        assert callers and all(callers)
+
+
+async def test_barge_in_drops_the_stale_turns_events() -> None:
+    llm = ScriptLLM(["one. ", "two. ", "three."])
+    async with running(llm) as h:
+
+        def barge_in(event: LoopEvent) -> None:
+            if event == Transcript("hi"):  # the turn is running: cut in right away
+                h.loop.submit(Wake())
+                h.loop.submit(Cancel())
+
+        h.loop.subscribe(barge_in)
+        h.loop.say("hi")
+        await h.events.until(lambda: h.loop.state is IDLE and len(h.events.states) >= 4)
+        await asyncio.sleep(0)  # let anything stale surface
+
+        events = h.events.events
+        assert events[:3] == [StateChanged(LISTENING), StateChanged(ROUTING), Transcript("hi")]
+        # After the barge-in nothing of the old turn leaks out, in any order.
+        assert events[3:] == [StateChanged(LISTENING), StateChanged(IDLE)]
 
 
 def test_hot_context_is_trimmed_oldest_first() -> None:

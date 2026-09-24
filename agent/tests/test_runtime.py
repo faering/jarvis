@@ -8,8 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketTestSession
 
-from jarvis_agent.loop import LoopState
-from jarvis_agent.main import app
+from jarvis_agent.loop import LoopState, ReplyText
+from jarvis_agent.main import _event, app
 from jarvis_agent.runtime import Runtime
 from jarvis_agent.store import StoreError
 
@@ -111,3 +111,10 @@ def test_say_without_runtime_is_unavailable() -> None:
         ws.receive_json()  # hello
         ws.send_json({"v": 0, "type": "say", "id": "1", "payload": {"text": "hi"}})
         assert ws.receive_json()["payload"]["code"] == "unavailable"
+
+
+def test_reply_not_spoken_is_flagged_additively() -> None:
+    spoken = _event(ReplyText(text="hi", done=True)).payload
+    unspoken = _event(ReplyText(text="hi", done=True, spoken=False)).payload
+    assert spoken == {"text": "hi", "done": True, "degraded": False}  # unchanged
+    assert unspoken == {"text": "hi", "done": True, "degraded": False, "spoken": False}
