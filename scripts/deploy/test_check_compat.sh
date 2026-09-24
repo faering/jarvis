@@ -13,6 +13,8 @@ cat >"$tmp/compat.json" <<'JSON'
 }
 JSON
 echo '{}' >"$tmp/empty.json"
+echo '{ "blocked": [' >"$tmp/broken.json"
+echo '{ "blocked": {"agent": "1.1.0"} }' >"$tmp/wrong-shape.json"
 
 pass=0
 fail=0
@@ -41,6 +43,10 @@ check "known_good beats mismatch" 0 "$c" agent 2.0.0 2 1.0.0 1
 check "agent without protocol" 0 "$c" agent 1.2.0 none 1.0.0 1
 check "app without protocol" 0 "$c" app 1.0.0 none 1.2.0 1
 check "empty compatibility file" 0 "$tmp/empty.json" agent 1.2.0 1 1.0.0 1
+check "malformed compatibility file" 1 "$tmp/broken.json" agent 1.2.0 1 1.0.0 1
+check "malformed file, other not deployed" 1 "$tmp/broken.json" agent 1.2.0 1 "" ""
+check "wrong-shaped compatibility file" 1 "$tmp/wrong-shape.json" agent 1.1.0 1 1.0.0 1
+check "missing compatibility file" 1 "$tmp/nope.json" agent 1.2.0 1 1.0.0 1
 check "unknown component" 2 "$c" display 1.0.0 1 1.0.0 1
 check "wrong arg count" 2 "$c" agent 1.0.0
 
