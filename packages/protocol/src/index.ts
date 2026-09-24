@@ -10,7 +10,16 @@
 export const PROTOCOL_VERSION = 0;
 
 /** Every message type in the schema's `$defs`. */
-export const MESSAGE_TYPES = ["hello", "ping", "pong", "error"] as const;
+export const MESSAGE_TYPES = [
+  "hello",
+  "ping",
+  "pong",
+  "error",
+  "say",
+  "state",
+  "transcript",
+  "reply",
+] as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 
