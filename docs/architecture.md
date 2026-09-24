@@ -69,3 +69,13 @@ Selection is env-only: `JARVIS_<ROLE>_BACKEND=openai|mock` plus `_BASE_URL` / `_
 - The display is a **native Tauri app** (not in Docker); it reaches the stack over **WebSocket**.
 
 See [state-machine.md](state-machine.md) for the agent loop, [deploy.md](deploy.md) for delivery.
+
+## State
+Jarvis keeps its own state in one local SQLite file (`agent/src/jarvis_agent/store/`,
+`JARVIS_STATE_DB`), so it works standalone ([ADR 0005](adr/0005-local-sqlite-state-store.md)).
+- **Local (Jarvis-owned):** conversation memory, preferences/capability config and caches
+  (key-value), queued notifications, and notes / todos / calendar by default.
+- **Faelab-owned, never copied locally:** 3D-print queue, ideas, weather, and notes / todos /
+  calendar when `JARVIS_<NOTES|TODO|CALENDAR>_PROVIDER=faelab`.
+- Every domain is an async provider interface; snapshots (SQLite online backup, typically
+  well under 10 MB) cover only the local file and back promote/rollback (#67).
