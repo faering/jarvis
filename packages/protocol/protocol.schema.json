@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/faering/jarvis/blob/main/packages/protocol/protocol.schema.json",
   "title": "Envelope",
-  "description": "Jarvis agent <-> app WebSocket contract: one JSON text frame, in either direction. The single source of truth for both sides (agent/src/jarvis_agent/protocol.py, packages/protocol/src/index.ts); tests on each side fail when they drift from this file. v is the protocol version: bump it (and PROTOCOL_VERSION on both sides) on any breaking change. Adding a message type or an optional payload field is not breaking: receivers ignore unknown types and fields. To add a message type, add a $defs entry named after the type (payload schema + examples) and a matching allOf entry.",
+  "description": "Jarvis agent <-> app WebSocket contract: one JSON text frame, in either direction. The single source of truth for both sides (agent/src/jarvis_agent/protocol.py, packages/protocol/src/index.ts); tests on each side fail when they drift from this file. v is the protocol version: bump it (and PROTOCOL_VERSION on both sides) on any breaking change. Receivers ignore unknown payload fields. The app ignores unknown types; the agent answers one with error unknown_type, which the app tolerates (so a newer app can talk to an older agent). Under these rules adding a message type or an optional payload field is not breaking. To add a message type, add a $defs entry named after the type (payload schema + examples) and a matching allOf entry.",
   "type": "object",
   "properties": {
     "v": {
@@ -220,7 +220,8 @@
         "text": {
           "description": "Non-blank utterance text.",
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "\\S"
         },
         "deep": {
           "type": "boolean",
@@ -243,7 +244,8 @@
       "type": "object",
       "properties": {
         "state": {
-          "type": "string"
+          "type": "string",
+          "enum": ["idle", "listening", "routing", "speaking", "offloaded"]
         }
       },
       "required": ["state"],
@@ -286,6 +288,26 @@
         }
       },
       "required": ["done", "degraded"],
+      "oneOf": [
+        {
+          "description": "Streaming chunk.",
+          "properties": {
+            "done": {
+              "const": false
+            }
+          },
+          "required": ["delta", "done", "degraded"]
+        },
+        {
+          "description": "Final frame with the full text.",
+          "properties": {
+            "done": {
+              "const": true
+            }
+          },
+          "required": ["text", "done", "degraded"]
+        }
+      ],
       "examples": [
         {
           "delta": "Hel",
