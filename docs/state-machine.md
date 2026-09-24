@@ -28,6 +28,19 @@ stateDiagram-v2
 - Speaking never blocks the loop (producer/consumer queue).
 - A barge-in during Speaking jumps straight back to Listening.
 
+## Implementation
+`jarvis_agent.loop.VoiceLoop` runs it: one actor task owns the state; input comes from an
+`AudioSource` (mic + wake word + VAD, Pi-only) as `Wake` / `Utterance` / `Cancel`, or as
+text. Hot replies stream from the local LLM into speech; heavy ones go to
+`Router.offload()` and are spoken once no turn is in progress and the user is not
+talking. Recent turns from conversation memory are the LLM context. A `degraded` reply
+(heavy wanted, local answered) is spoken as-is and only flagged to the UI.
+`runtime.py` builds it all in the FastAPI lifespan (audio out: `NullSink` off-device).
+
+WebSocket (envelope v0, additive): client `say` {text, deep?}; agent `state` {state},
+`transcript` {text}, `reply` {delta, done: false, degraded} while streaming, then
+`reply` {text, done: true, degraded}.
+
 ## Speech output
 `jarvis_agent.speech.SpeechQueue` implements Speaking.
 - **Producers** call sync `begin_turn`/`feed`/`end_turn`/`say`; they never await TTS.
