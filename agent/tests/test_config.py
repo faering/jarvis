@@ -61,6 +61,13 @@ def test_unreadable_layers_are_all_reported(tmp_path: Path) -> None:
     assert "unknown profile 'nope' (known: dev, home, work)" in str(exc.value)
 
 
+def test_invalid_utf8_file_is_a_config_error(tmp_path: Path) -> None:
+    corrupt = tmp_path / "jarvis.toml"
+    corrupt.write_bytes(b'profile = "dev"\n# \xff\xfe broken\n')
+    with pytest.raises(ConfigError, match="jarvis.toml"):
+        load_config({"JARVIS_CONFIG": str(corrupt)})
+
+
 def test_missing_local_file_is_an_error(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="file not found"):
         load_config({"JARVIS_CONFIG": str(tmp_path / "absent.toml")})
