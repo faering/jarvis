@@ -15,15 +15,16 @@ OS customisation → Services → Enable SSH, or on the Pi `sudo systemctl enabl
 Then, on the Pi:
 ```sh
 curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker "$USER"   # Docker + Compose v2
-# App deploys install their .deb through this one root-owned script, not arbitrary apt-get:
+# App deploys install their .deb through this one root-owned script, not arbitrary apt-get.
 curl -fsSL https://raw.githubusercontent.com/faering/jarvis/main/scripts/deploy/jarvis-install-app -o /tmp/jarvis-install-app
+less /tmp/jarvis-install-app    # read it first: it only installs a package named jarvis from ~/jarvis/
 sudo install -o root -g root -m 755 /tmp/jarvis-install-app /usr/local/sbin/jarvis-install-app
 echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/jarvis-install-app" | sudo tee /etc/sudoers.d/jarvis-deploy
 sudo chmod 440 /etc/sudoers.d/jarvis-deploy
 mkdir -p ~/jarvis && touch ~/jarvis/.env      # runtime config (see .env.example)
 ```
-Log out and in again so the `docker` group applies. Read the installer before installing it:
-it only installs a package named `jarvis` from `~/jarvis/incoming/` or `~/jarvis/app/`.
+Log out and in again so the `docker` group applies. The installed copy is root-owned and never
+updates itself; re-run the three installer lines to take a newer version.
 
 ## 2. Put the Pi on Tailscale
 1. Create a free account at [tailscale.com](https://tailscale.com). Install Tailscale on your
