@@ -92,9 +92,7 @@ def test_deep_say_is_offloaded(ws: WebSocketTestSession) -> None:
     assert replies == [{"text": heavy, "done": True, "degraded": False}]
 
 
-@pytest.mark.parametrize(
-    "payload", [{}, {"text": ""}, {"text": "   "}, {"text": 1}, {"text": "hi", "x": 1}]
-)
+@pytest.mark.parametrize("payload", [{}, {"text": ""}, {"text": "   "}, {"text": 1}])
 def test_bad_say_gets_error_and_keeps_connection(
     ws: WebSocketTestSession, payload: dict[str, Any]
 ) -> None:
@@ -104,6 +102,13 @@ def test_bad_say_gets_error_and_keeps_connection(
 
     ws.send_json({"v": 0, "type": "ping", "id": "after"})
     assert ws.receive_json()["type"] == "pong"
+
+
+def test_say_ignores_unknown_payload_fields(ws: WebSocketTestSession) -> None:
+    # Additive protocol: a newer app may send fields this agent doesn't know yet.
+    ws.send_json({"v": 0, "type": "say", "id": "8", "payload": {"text": "hi", "future": 1}})
+    frames = _frames_until_idle(ws)
+    assert ("transcript", {"text": "hi"}) in [(f["type"], f["payload"]) for f in frames]
 
 
 def test_say_without_runtime_is_unavailable() -> None:
