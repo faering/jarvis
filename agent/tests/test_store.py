@@ -329,6 +329,65 @@ async def test_restore_rejects_missing_or_newer_snapshots(state: State, tmp_path
     assert await state.kv.get("kept") is True  # untouched
 
 
+async def assert_restore_refused(state: State, snapshot: Path, match: str) -> None:
+    await state.kv.set("live", "kept")
+    with pytest.raises(StoreError, match=match):
+        await state.restore(snapshot)
+    assert await state.kv.get("live") == "kept"  # live database untouched and usable
+    await state.kv.set("live", "still writable")
+    assert await state.db.schema_version() == SCHEMA_VERSION
+
+
+@pytest.mark.anyio
+async def test_restore_rejects_corrupt_snapshots(state: State, tmp_path: Path) -> None:
+    for index in range(200):
+        await state.notes.create(f"note {index}", "x" * 200)  # spans many pages
+    snapshot = await state.snapshot(tmp_path / "good.db")
+    data = bytearray(snapshot.read_bytes())
+    page = 4096
+    data[3 * page : 6 * page] = b"\xff" * (3 * page)  # trash some b-tree pages
+    corrupt = tmp_path / "corrupt.db"
+    corrupt.write_bytes(bytes(data))
+    await assert_restore_refused(state, corrupt, "corrupt|malformed")
+
+    garbage = tmp_path / "garbage.db"
+    garbage.write_bytes(b"not a sqlite database at all" * 100)
+    await assert_restore_refused(state, garbage, "cannot restore")
+
+
+@pytest.mark.anyio
+async def test_restore_rejects_snapshots_missing_tables(state: State, tmp_path: Path) -> None:
+    # Claims the current schema version but lacks most tables: migrating would be a no-op.
+    partial = tmp_path / "partial.db"
+    conn = sqlite3.connect(partial)
+    conn.execute("CREATE TABLE notes (id TEXT PRIMARY KEY)")
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    conn.close()
+    await assert_restore_refused(state, partial, "missing")
+
+
+@pytest.mark.anyio
+async def test_restore_reader_compatibility(state: State, tmp_path: Path) -> None:
+    note = await state.notes.create("in the snapshot")
+    snapshot = await state.snapshot(tmp_path / "newer.db")
+    make_future(snapshot)  # taken by a later release with an additive migration
+    await state.notes.delete(note.id)
+    await state.restore(snapshot)
+    assert await state.notes.get(note.id) == note
+    assert await state.db.schema_version() == SCHEMA_VERSION + 1
+
+    breaking = await state.snapshot(tmp_path / "breaking.db")
+    conn = sqlite3.connect(breaking)
+    conn.execute("UPDATE schema_meta SET min_reader = ?", (SCHEMA_VERSION + 2,))
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 2}")
+    conn.commit()
+    conn.close()
+    await state.kv.set("live", "kept")
+    with pytest.raises(StoreError, match="newer"):
+        await state.restore(breaking)
+    assert await state.kv.get("live") == "kept"
+
+
 @pytest.mark.anyio
 async def test_closed_store_raises(tmp_path: Path) -> None:
     state = await open_state(StoreSettings(db=":memory:"))

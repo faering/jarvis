@@ -125,9 +125,11 @@ class SqliteStore:
         return await asyncio.to_thread(self._with_lock, _snapshot, Path(dest))
 
     async def restore(self, src: str | Path) -> None:
-        """Replace the whole database with the snapshot at ``src``, then migrate it forward.
+        """Replace the whole database with the snapshot at ``src``, migrated forward.
 
-        A snapshot from a newer schema (a later release) is refused.
+        The snapshot is checked (integrity, readable schema version, expected tables) and
+        migrated in a scratch copy first; only a usable result replaces the live database.
+        On any failure the live database is untouched.
         """
         await asyncio.to_thread(self._with_lock, _restore, Path(src))
 
@@ -275,19 +277,27 @@ def _snapshot(conn: sqlite3.Connection, dest: Path) -> Path:
 
 
 def _restore(conn: sqlite3.Connection, src: Path) -> None:
+    """Load ``src`` into a scratch copy, check and migrate it, then swap it in.
+
+    The live database is written only by the final backup, which is a single transaction:
+    a corrupt, incomplete or unreadable snapshot leaves it untouched.
+    """
     if not src.is_file():
         raise StoreError(f"snapshot {str(src)!r} does not exist")
-    source = sqlite3.connect(f"{src.resolve().as_uri()}?mode=ro", uri=True)
+    what = f"snapshot {str(src)!r}"
+    candidate = sqlite3.connect(MEMORY, autocommit=True)
     try:
-        version = _user_version(source)
-        if version > SCHEMA_VERSION:
-            raise StoreError(
-                f"snapshot schema v{version} is newer than this build supports "
-                f"(v{SCHEMA_VERSION}); refusing to restore it"
-            )
-        source.backup(conn)
+        source = sqlite3.connect(f"{src.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            source.backup(candidate)
+        finally:
+            source.close()
+        problems = [row[0] for row in candidate.execute("PRAGMA integrity_check")]
+        if problems != ["ok"]:
+            raise StoreError(f"{what} is corrupt: {'; '.join(problems[:3])}")
+        _migrate(candidate, what)
+        candidate.backup(conn)
     except sqlite3.DatabaseError as exc:
-        raise StoreError(f"cannot restore snapshot {str(src)!r}: {exc}") from exc
+        raise StoreError(f"cannot restore {what}: {exc}") from exc
     finally:
-        source.close()
-    _migrate(conn)
+        candidate.close()
