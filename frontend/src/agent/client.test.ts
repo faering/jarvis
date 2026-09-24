@@ -12,6 +12,8 @@ interface FakeAgentOptions {
   protocol?: number | null;
   /** Envelope version on the hello frame. */
   helloV?: number;
+  /** Envelope version on pong frames. */
+  pongV?: number;
   /** Answer pings with a matching pong. */
   pong?: boolean;
 }
@@ -20,6 +22,7 @@ interface FakeAgentOptions {
 async function fakeAgent({
   protocol = 0,
   helloV = 0,
+  pongV = 0,
   pong = true,
 }: FakeAgentOptions = {}) {
   const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
@@ -43,7 +46,7 @@ async function fakeAgent({
       received.push(frame);
       if (frame.type === "ping" && pong) {
         socket.send(
-          JSON.stringify({ v: 0, type: "pong", id: frame.id, payload: {} }),
+          JSON.stringify({ v: pongV, type: "pong", id: frame.id, payload: {} }),
         );
       }
     });
@@ -174,6 +177,14 @@ describe("AgentClient", () => {
     await waitFor(client, (s) => s.state === "incompatible");
     await sleep(200);
     expect(server.sockets).toHaveLength(1);
+  });
+
+  it("ignores a pong with another envelope version and reconnects", async () => {
+    const { client, server } = await setup({ pongV: 1 });
+    client.start();
+    await waitFor(client, (s) => s.state === "open");
+    await waitFor(client, (s) => s.state === "reconnecting");
+    expect(server.sockets.length).toBeGreaterThanOrEqual(1);
   });
 
   it("reconnects after the server closes the connection", async () => {
