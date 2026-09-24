@@ -1,0 +1,180 @@
+name: deploy
+run-name: >-
+  deploy ${{ github.event_name == 'workflow_dispatch'
+  && format('{0}-v{1}', inputs.component, inputs.version)
+  || github.event.workflow_run.display_title }}
+
+# Per-component SSH deploy to the Pi (docs/deploy.md). Runs after release-artifacts
+# publishes a release's artifacts, or manually for one component + version (also the way
+# to roll back to an older release). Only one component moves per run; the other stays put.
+#
+# Dormant until the repo variable PI_DEPLOY_ENABLED is "true". The job runs in the `pi`
+# environment: give it required reviewers so a human approves every rollout.
+on:
+  workflow_run:
+    workflows: [release-artifacts]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Component to deploy
+        type: choice
+        options: [agent, app]
+        required: true
+      version:
+        description: Released version, e.g. 0.2.0 (tag <component>-v<version>)
+        required: true
+
+permissions:
+  contents: read
+
+# One rollout at a time; queue, never cancel one mid-flight.
+concurrency:
+  group: deploy-pi
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: plan
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      component: ${{ steps.plan.outputs.component }}
+      version: ${{ steps.plan.outputs.version }}
+      enabled: ${{ steps.plan.outputs.enabled }}
+    steps:
+      - id: plan
+        env:
+          DISPATCH_TAG: ${{ inputs.component }}-v${{ inputs.version }}
+          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
+          ENABLED: ${{ vars.PI_DEPLOY_ENABLED }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            tag="$DISPATCH_TAG"
+          else
+            tag="${RUN_TITLE##* }" # "release-artifacts <tag>"
+          fi
+          if [[ ! "$tag" =~ ^(agent|app)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::cannot deploy '$tag': not an agent-vX.Y.Z / app-vX.Y.Z tag."
+            exit 1
+          fi
+          {
+            echo "tag=$tag"
+            echo "component=${BASH_REMATCH[1]}"
+            echo "version=${BASH_REMATCH[2]}"
+          } >> "$GITHUB_OUTPUT"
+          if [[ "$ENABLED" == true ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pi deploy of $tag skipped: dormant until repo variable PI_DEPLOY_ENABLED=true (docs/deploy.md)."
+          fi
+
+  deploy:
+    name: deploy ${{ needs.plan.outputs.tag }} to the Pi
+    needs: plan
+    if: needs.plan.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pi
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      COMPONENT: ${{ needs.plan.outputs.component }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Default branch: the current deploy scripts, compose file and compatibility.json.
+      - uses: actions/checkout@v7
+
+      - name: require SSH secrets
+        env:
+          HOST: ${{ secrets.PI_SSH_HOST }}
+          USER_: ${{ secrets.PI_SSH_USER }}
+          KEY: ${{ secrets.PI_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+        run: |
+          missing=()
+          [[ -n "$HOST" ]] || missing+=(PI_SSH_HOST)
+          [[ -n "$USER_" ]] || missing+=(PI_SSH_USER)
+          [[ -n "$KEY" ]] || missing+=(PI_SSH_KEY)
+          [[ -n "$KNOWN_HOSTS" ]] || missing+=(PI_SSH_KNOWN_HOSTS)
+          if ((${#missing[@]})); then
+            echo "::error::PI_DEPLOY_ENABLED is true but secrets are missing: ${missing[*]} (docs/deploy.md)."
+            exit 1
+          fi
+
+      - name: release manifest
+        run: |
+          # manifest.json is uploaded last by release-artifacts: no manifest, no complete release.
+          gh release download "$TAG" --pattern manifest.json --dir release
+          jq . release/manifest.json
+          jq -e --arg c "$COMPONENT" --arg v "$VERSION" \
+            '.component == $c and .version == $v' release/manifest.json >/dev/null || {
+            echo "::error::release/manifest.json does not describe $COMPONENT $VERSION."
+            exit 1
+          }
+          {
+            echo "DOCKER_TAG=$(jq -r .docker_tag release/manifest.json)"
+            echo "PROTOCOL=$(jq -r .protocol release/manifest.json)"
+          } >> "$GITHUB_ENV"
+
+      - name: ssh setup
+        env:
+          HOST: ${{ secrets.PI_SSH_HOST }}
+          USER_: ${{ secrets.PI_SSH_USER }}
+          KEY: ${{ secrets.PI_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          PORT: ${{ vars.PI_SSH_PORT || '22' }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/pi_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/pi_key ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host pi
+            HostName $HOST
+            User $USER_
+            Port $PORT
+            IdentityFile ~/.ssh/pi_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 20
+            ServerAliveInterval 15
+          EOF
+          ssh pi 'mkdir -p jarvis/app jarvis/state && uname -m'
+
+      - name: compatibility gate (vs. the other component on the Pi)
+        run: |
+          other=$([[ "$COMPONENT" == agent ]] && echo app || echo agent)
+          state="$(ssh pi bash -s -- "$other" < scripts/deploy/remote-state.sh)"
+          other_version="$(sed -n 's/^VERSION=//p' <<<"$state")"
+          other_protocol="$(sed -n 's/^PROTOCOL=//p' <<<"$state")"
+          echo "deployed $other: ${other_version:-none} (protocol ${other_protocol:-?})"
+          scripts/deploy/check-compat.sh compatibility.json "$COMPONENT" "$VERSION" "$PROTOCOL" \
+            "$other_version" "$other_protocol"
+
+      - name: roll out agent
+        if: env.COMPONENT == 'agent'
+        run: |
+          scp deploy/pi/docker-compose.yml pi:jarvis/docker-compose.yml
+          ssh pi bash -s -- "$DOCKER_TAG" "$VERSION" "$PROTOCOL" < scripts/deploy/remote-agent.sh
+
+      - name: roll out app
+        if: env.COMPONENT == 'app'
+        run: |
+          gh release download "$TAG" --pattern '*_arm64.deb' --dir release
+          deb="$(basename release/*_arm64.deb)"
+          scp "release/$deb" "pi:jarvis/app/$deb"
+          ssh pi bash -s -- "jarvis/app/$deb" "$VERSION" "$PROTOCOL" < scripts/deploy/remote-app.sh
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### Pi deploy: $COMPONENT $VERSION (${{ job.status }})"
+            echo '```'
+            ssh pi 'tail -n +1 jarvis/state/agent.env jarvis/state/app.env' 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
