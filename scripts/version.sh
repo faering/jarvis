@@ -2,7 +2,7 @@
 # Build provenance for one component (see AGENTS.md "Build provenance & displayed versions").
 #
 # Usage:  scripts/version.sh <agent|app>
-#   eval "$(scripts/version.sh agent)"          # sets CANONICAL, DOCKER_TAG, REVISION
+#   see scripts/compose-build.sh                # parse it there; don't eval (tag text)
 #   scripts/version.sh agent >> "$GITHUB_ENV"   # in GitHub Actions
 #
 # Output (KEY=VALUE, one per line):
