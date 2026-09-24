@@ -12,8 +12,8 @@ touch /commandhistory/.bash_history 2>/dev/null || true
 
 # Install git hooks for every stage the project uses. Safe to re-run.
 if [ -f .pre-commit-config.yaml ]; then
-  # Pull each hook repo to its latest tag, then install hooks for every stage.
-  pre-commit autoupdate || true
+  # Install hooks for every stage. Hook versions are pinned in the config and bumped
+  # deliberately in a PR (no autoupdate here: it left unstaged edits that abort commits).
   pre-commit install \
     --hook-type pre-commit \
     --hook-type pre-push \
