@@ -54,7 +54,7 @@ flowchart LR
   purpose, run `deploy` by hand with the older version. A failed *first* agent deploy
   removes the container instead. The app `.deb` is staged in `~/jarvis/incoming/` and
   becomes `~/jarvis/app/current.deb` only once installed (the old one → `previous.deb`).
-- **Enable it:** follow [setup-gh-environment.md](setup-gh-environment.md) (Tailscale,
+- **Enable it:** follow the [Pi first-time setup](pi-setup.md) (Tailscale,
   deploy key, the `pi` environment and its secrets, then `PI_DEPLOY_ENABLED=true`).
 - **Pi prerequisites:** Pi OS Trixie or newer (64-bit; the `.deb` is built on Ubuntu 24.04),
   Docker with Compose v2, reachable over SSH from GitHub runners, passwordless

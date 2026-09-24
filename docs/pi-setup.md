@@ -1,6 +1,6 @@
-# Set up Pi deploys (GitHub `pi` environment)
+# Pi first-time setup
 
-Do this once to turn on `.github/workflows/deploy.yml`. Replace `<user>` with your Pi user
+Do this once on a fresh Pi to make it deployable from GitHub (`.github/workflows/deploy.yml`). Replace `<user>` with your Pi user
 and `<pi>` with the Pi's Tailscale name (step 2).
 
 ## Why Tailscale
@@ -22,20 +22,26 @@ Log out and in again so the `docker` group applies.
 ## 2. Put the Pi on Tailscale
 1. Create a free account at [tailscale.com](https://tailscale.com). Install Tailscale on your
    work/dev PC too.
-2. On the Pi: `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up`, then
-   open the printed link to add it.
-3. In the [admin console](https://login.tailscale.com/admin/machines): open the Pi →
-   **Disable key expiry** (otherwise it drops off after 180 days). Its full name
-   (`<name>.<tailnet>.ts.net`) is `<pi>` in the steps below.
-4. Check from your PC: `ssh <user>@<pi>`.
+2. Admin console → **DNS**: make sure **MagicDNS** is enabled (it is on new tailnets). The
+   `*.ts.net` names below depend on it.
+3. Admin console → **Access controls**: add two tags. Let your own devices reach the Pi, and
+   let CI reach it on SSH only. (With the default allow-all policy, `grants` is optional.)
+   ```json
+   "tagOwners": { "tag:ci": ["autogroup:admin"], "tag:jarvis": ["autogroup:admin"] },
+   "grants": [
+     { "src": ["autogroup:member"], "dst": ["tag:jarvis"], "ip": ["*"] },
+     { "src": ["tag:ci"], "dst": ["tag:jarvis"], "ip": ["tcp:22"] }
+   ]
+   ```
+4. On the Pi: `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --advertise-tags=tag:jarvis`,
+   then open the printed link to add it. Tagged devices don't expire, so the Pi stays reachable.
+5. Its full name in the admin console (`<name>.<tailnet>.ts.net`) is `<pi>` in the steps
+   below. Check from your PC: `ssh <user>@<pi>`.
 
 ## 3. Let GitHub join the tailnet
-1. Admin console → **Access controls**: add a tag owner so CI nodes can be tagged:
-   ```json
-   "tagOwners": { "tag:ci": ["autogroup:admin"] }
-   ```
-2. Admin console → **Settings → Trust credentials** → new OAuth client with the **Auth Keys:
-   Write** scope and tag `tag:ci`. Keep the client ID and secret for step 5.
+Admin console → **Settings → Trust credentials** → new OAuth client with the **Auth Keys:
+Write** scope and tag `tag:ci` (defined in step 2). Keep the client ID and secret for step 5;
+they go in as a pair.
 
 ## 4. Deploy key and host key
 On your PC (on the tailnet):
