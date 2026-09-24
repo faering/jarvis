@@ -41,6 +41,9 @@ async def ws(websocket: WebSocket) -> None:
     runtime: Runtime | None = getattr(websocket.app.state, "runtime", None)
     loop = runtime.loop if runtime is not None else None
     unsubscribe = loop.subscribe(lambda event: _post(outbox, _event(event))) if loop else None
+    if loop is not None:
+        # A new client learns the current state right away, not at the next change.
+        _post(outbox, protocol.state(loop.state.value))
     writer = asyncio.create_task(_write(websocket, outbox), name="ws-writer")
     try:
         while True:
