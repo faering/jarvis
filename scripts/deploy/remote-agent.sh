@@ -54,18 +54,20 @@ verify() { # verify <env-file> <expected-version>
     return 1
   fi
   # /version lands with #28; until then a 404 just skips this check.
-  body="$(docker exec "$cid" python -c '
-import sys, urllib.error, urllib.request
+  # Print only the JSON "version" field, so the comparison below is exact.
+  reported="$(docker exec "$cid" python -c '
+import json, sys, urllib.error, urllib.request
 try:
-    print(urllib.request.urlopen("http://127.0.0.1:8000/version", timeout=3).read().decode())
+    body = urllib.request.urlopen("http://127.0.0.1:8000/version", timeout=3).read()
 except urllib.error.HTTPError as e:
     sys.exit(0 if e.code == 404 else 1)
+print(json.loads(body)["version"])
 ')" || {
-    log "/version request failed"
+    log "/version request failed or returned no version field"
     return 1
   }
-  if [[ -n "$body" && "$body" != *"\"$want\""* ]]; then
-    log "/version reports '$body', expected '$want'"
+  if [[ -n "$reported" && "$reported" != "$want" ]]; then
+    log "/version reports version '$reported', expected '$want'"
     return 1
   fi
   log "healthy, version $want"

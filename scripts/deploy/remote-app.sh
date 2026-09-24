@@ -55,7 +55,9 @@ if install "$deb" && [[ "$(installed "$pkg")" == "$expected" ]]; then
     prev_kept="$previous"
   fi
   keep "$deb" "$current"
-  cat >"$state" <<EOF
+  # Write the new state beside the old one and rename it into place (atomic): a lost SSH
+  # session or power cut mid-write must never leave an empty state file.
+  cat >"$state.next" <<EOF
 PACKAGE=$pkg
 VERSION=$expected
 PROTOCOL=$protocol
@@ -64,6 +66,7 @@ PREVIOUS_DEB=$prev_kept
 PREVIOUS_VERSION=$prev_version
 DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
+  mv -f "$state.next" "$state"
   # Prune anything else (e.g. debs kept under their release names by older deploys).
   find "$dir/app" -maxdepth 1 -name '*.deb' ! -path "$current" ! -path "$previous" -delete
   [[ -n "$prev_kept" ]] || rm -f "$previous"
