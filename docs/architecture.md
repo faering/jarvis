@@ -44,10 +44,15 @@ flowchart TB
 ```
 
 ## Compute layers
-1. **IMX500** — on-sensor inference (first pass).
-2. **Hailo NPU** — quantized models on-device.
-3. **Pi 5 CPU** — orchestrator; always-on voice loop (1–4B). Heavy tasks go **async** to
-   cloud/larger models, never on the hot path.
+`agent/src/jarvis_agent/routing/` places each backend on a layer — **camera** (IMX500),
+**NPU** (Hailo), **CPU** (Pi orchestrator), **remote** (cloud / larger model) — and picks
+the first available one. Off-device the camera/NPU slots are empty, so work lands on CPU.
+- **Policy** (explicit, no model): the caller's route wins; else `deep` or a prompt over
+  ~4k chars → **heavy**; else **hot** (local 1–4B `llm`, NPU before CPU).
+- **Heavy** runs on `heavy_llm` via `Router.offload()`, which returns an `asyncio.Task`
+  at once; the reply re-enters later (Offloaded → Speaking), never on the hot path.
+- **Fallback:** heavy unconfigured, failing or timed out (120 s) → the local `llm` answers
+  and the reply is marked `degraded`.
 
 ## Role backends
 The agent talks to models only through role interfaces (`agent/src/jarvis_agent/backends/`);
@@ -58,6 +63,7 @@ every role has a deterministic mock, the default in tests, CI and the devcontain
 | LLM | `chat`, `stream` | OpenAI-compatible HTTP → Ollama | Hailo-Ollama¹ |
 | STT | `transcribe` | OpenAI-compatible HTTP → speaches (Whisper) | TBD (Hailo Whisper / CPU) |
 | TTS | `synthesize` | OpenAI-compatible HTTP → speaches (Piper) | Piper (CPU) |
+| Heavy LLM | `chat`, `stream` | none (→ LLM) or OpenAI-compatible HTTP → vLLM / cloud | same |
 | Vision | `detect` | mock only | IMX500 / Hailo (#35, #60) |
 
 ¹ Speaks Ollama's API; its OpenAI `/v1` compatibility is unverified until tested on the Pi.
