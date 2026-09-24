@@ -170,6 +170,8 @@ class LocalCalendar:
 
     async def between(self, start: datetime, end: datetime) -> list[Event]:
         start_ts, end_ts = _span(start, end)
+        if start_ts == end_ts:
+            return []  # [t, t) is empty: nothing overlaps it, not even an event spanning t
         # Overlaps [start, end); a zero-length event counts if it sits inside the range.
         sql = (
             f'SELECT {EVENT_COLUMNS} FROM events WHERE start < ? AND ("end" > ? OR start >= ?)'

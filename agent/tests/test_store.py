@@ -119,6 +119,9 @@ async def test_calendar_crud_and_range_queries(state: State) -> None:
     assert await titles(T0 + 3 * hour, T0 + 3 * hour + 1 * hour) == ["lunch"]  # [start, end)
     assert await titles(T0 + 4 * hour, T0 + 5 * hour) == []  # lunch ended, ping not yet
     assert await titles(T0 + 5 * hour, T0 + 6 * hour) == ["ping"]
+    # An empty range [t, t) matches nothing, even events spanning t or sitting at t.
+    assert await titles(T0 + hour / 8, T0 + hour / 8) == []
+    assert await titles(T0 + 5 * hour, T0 + 5 * hour) == []
     assert await titles((T0 + 2 * hour).astimezone(cet), (T0 + 3 * hour).astimezone(cet)) == [
         "call"
     ]

@@ -123,7 +123,11 @@ class CalendarProvider(Protocol):
     async def get(self, event_id: str) -> Event | None: ...
 
     async def between(self, start: datetime, end: datetime) -> list[Event]:
-        """Events overlapping ``[start, end)``, ordered by start."""
+        """Events overlapping ``[start, end)``, ordered by start.
+
+        ``start == end`` is an empty range and returns ``[]``; ``end < start`` is a
+        ``ValueError``.
+        """
         ...
 
     async def update(self, event: Event) -> Event: ...
