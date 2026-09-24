@@ -1,0 +1,225 @@
+name: release-artifacts
+# The run title carries the tag: deploy.yml reads it from workflow_run.display_title.
+run-name: release-artifacts ${{ inputs.tag || github.event.release.tag_name }}
+
+# Builds and publishes a component's artifacts when release-please publishes its release
+# (release-please uses a PAT, so its `release` event starts this workflow):
+#   agent-v* -> multi-arch image ghcr.io/<owner>/jarvis-agent:<DOCKER_TAG> (+ latest)
+#   app-v*   -> Tauri .deb bundles (amd64 + arm64) attached to the GitHub release
+# Every release then gets manifest.json (version, docker tag, revision, protocol), uploaded
+# LAST: its presence means the release's artifacts are complete. deploy.yml consumes it.
+# Gate: nothing is built unless the tagged commit's `ci-ok` check passed.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to (re)build, e.g. agent-v0.2.0
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-artifacts-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.event.release.tag_name }}
+  NODE_VERSION: "24"
+
+jobs:
+  resolve:
+    name: resolve tag + CI gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      component: ${{ steps.tag.outputs.component }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - id: tag
+        run: |
+          if [[ "$TAG" =~ ^(agent|app)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "component=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "version=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::'$TAG' is not an agent-vX.Y.Z / app-vX.Y.Z release tag."
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+      # Release tooling from the workflow's own commit (older tags may predate it).
+      - uses: actions/checkout@v7
+        with:
+          path: .ci
+      - name: require green CI (ci-ok) on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .ci/scripts/release/ci-gate.sh "$(git rev-parse HEAD)"
+
+  agent:
+    name: agent image (GHCR)
+    needs: resolve
+    if: needs.resolve.outputs.component == 'agent'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0 # tags for version.sh
+      # Release tooling from the workflow's own commit (older tags may predate it).
+      - uses: actions/checkout@v7
+        with:
+          path: .ci
+      - name: provenance (scripts/version.sh)
+        env:
+          WANT: ${{ needs.resolve.outputs.version }}
+        run: |
+          .ci/scripts/version.sh agent | tee -a "$GITHUB_ENV" > version.env
+          source version.env
+          if [[ "$CANONICAL" != "$WANT" ]]; then
+            echo "::error::version.sh says $CANONICAL at $TAG, expected $WANT."
+            exit 1
+          fi
+          echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jarvis-agent" >> "$GITHUB_ENV"
+      - uses: docker/setup-qemu-action@v4 # emulates arm64 (the Pi); the image only copies wheels
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # `latest` only follows real releases, not manual rebuilds of older tags.
+          tags: |
+            ${{ env.IMAGE }}:${{ env.DOCKER_TAG }}
+            ${{ github.event_name == 'release' && format('{0}:latest', env.IMAGE) || '' }}
+          build-args: |
+            VERSION=${{ env.CANONICAL }}
+            REVISION=${{ env.REVISION }}
+            BUILD_TIME=${{ env.BUILD_TIME }}
+          labels: |
+            org.opencontainers.image.title=jarvis-agent
+            org.opencontainers.image.version=${{ env.CANONICAL }}
+            org.opencontainers.image.revision=${{ env.REVISION }}
+            org.opencontainers.image.created=${{ env.BUILD_TIME }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=agent
+          cache-to: type=gha,scope=agent,mode=max
+      - name: verify pushed image labels
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$DOCKER_TAG"
+          for platform in linux/amd64 linux/arm64; do
+            labels="$(docker buildx imagetools inspect "$IMAGE:$DOCKER_TAG" \
+              --format "{{ json (index .Image \"$platform\") }}" | jq -c '.config.Labels')"
+            echo "$platform: $labels"
+            jq -e --arg v "$CANONICAL" --arg r "$REVISION" \
+              '.["org.opencontainers.image.version"] == $v and .["org.opencontainers.image.revision"] == $r' \
+              <<<"$labels" >/dev/null
+          done
+
+  app:
+    name: app bundle (${{ matrix.arch }})
+    needs: resolve
+    if: needs.resolve.outputs.component == 'app'
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64 # the Pi; native runner, no cross-compiling
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write # gh release upload
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+      # Release tooling from the workflow's own commit (older tags may predate it).
+      - uses: actions/checkout@v7
+        with:
+          path: .ci
+      - name: provenance (scripts/version.sh)
+        env:
+          WANT: ${{ needs.resolve.outputs.version }}
+        run: |
+          .ci/scripts/version.sh app | tee -a "$GITHUB_ENV" > version.env
+          source version.env
+          pkg="$(jq -r .version frontend/package.json)"
+          if [[ "$CANONICAL" != "$WANT" || "$pkg" != "$WANT" ]]; then
+            echo "::error::version.sh=$CANONICAL, package.json=$pkg at $TAG; expected $WANT."
+            exit 1
+          fi
+          echo "VITE_APP_VERSION=$CANONICAL" >> "$GITHUB_ENV"
+      - uses: pnpm/action-setup@v6 # version from package.json packageManager
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
+          key: release-${{ matrix.arch }}
+      - name: Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: pnpm install --frozen-lockfile
+      - name: tauri build (.deb)
+        working-directory: frontend
+        run: pnpm tauri build --bundles deb
+      - name: attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s failglob
+          debs=(frontend/src-tauri/target/release/bundle/deb/*_"${{ matrix.arch }}".deb)
+          dpkg-deb -f "${debs[0]}" Package Version Architecture
+          [[ "$(dpkg-deb -f "${debs[0]}" Version)" == "$CANONICAL" ]]
+          gh release upload "$TAG" "${debs[@]}" --clobber
+
+  manifest:
+    name: release manifest
+    needs: [resolve, agent, app]
+    # Exactly one build job runs; the other is skipped.
+    if: >-
+      always() && needs.resolve.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+      # Release tooling from the workflow's own commit (older tags may predate it).
+      - uses: actions/checkout@v7
+        with:
+          path: .ci
+      - name: write + attach manifest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMPONENT: ${{ needs.resolve.outputs.component }}
+        run: |
+          image=""
+          [[ "$COMPONENT" == agent ]] && image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jarvis-agent"
+          .ci/scripts/release/manifest.sh "$COMPONENT" ${image:+"$image"} | tee manifest.json
+          gh release upload "$TAG" manifest.json --clobber
