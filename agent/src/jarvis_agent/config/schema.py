@@ -37,6 +37,17 @@ class CapabilityConfig(BaseModel):
     enabled: Toggle = "auto"
     prefer: tuple[str, ...] = ()
 
+    _origins: dict[str, str] = PrivateAttr(default_factory=dict)  # field -> config layer
+
+    def origin(self, *fields: str) -> str | None:
+        """The layer(s) that set ``fields`` (all fields if none), e.g. ``env JARVIS_CAP_X``.
+
+        Set by ``load_config()``; ``None`` for a ``CapabilityConfig`` built in code.
+        """
+        keys = fields or tuple(self._origins)
+        found = sorted({self._origins[k] for k in keys if k in self._origins})
+        return ", ".join(found) or None
+
 
 class JarvisConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
