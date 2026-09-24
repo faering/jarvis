@@ -18,5 +18,12 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "include": ["src", "vite.config.ts", "app-version.ts", "app-version.test.ts"]
+  "include": [
+    "src",
+    "integration",
+    "vite.config.ts",
+    "vitest.integration.config.ts",
+    "app-version.ts",
+    "app-version.test.ts"
+  ]
 }
