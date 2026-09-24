@@ -6,6 +6,7 @@ inside the agent image. Adding a message type: see the schema's top-level descri
 
 import ast
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -30,15 +31,32 @@ def _types(prop: dict[str, Any]) -> set[str]:
     return set(kind) if isinstance(kind, list) else {kind}
 
 
-def _conforms(payload: dict[str, Any], schema: dict[str, Any]) -> bool:
-    """Tiny structural check (required keys + property types) — no validator dependency."""
-    if any(key not in payload for key in schema["required"]):
+def _prop_ok(value: Any, prop: dict[str, Any]) -> bool:
+    """One property against the keywords the schema uses: type, const, enum, minLength, pattern."""
+    if "type" in prop and _JSON_TYPES.get(type(value)) not in _types(prop):
         return False
-    return all(
-        _JSON_TYPES.get(type(payload[key])) in _types(prop)
-        for key, prop in schema["properties"].items()
-        if key in payload
+    if "const" in prop and (type(value), value) != (type(prop["const"]), prop["const"]):
+        return False
+    if "enum" in prop and value not in prop["enum"]:
+        return False
+    if isinstance(value, str) and len(value) < prop.get("minLength", 0):
+        return False
+    return not (
+        isinstance(value, str) and "pattern" in prop and not re.search(prop["pattern"], value)
     )
+
+
+def _conforms(payload: dict[str, Any], schema: dict[str, Any]) -> bool:
+    """Tiny structural check (required keys, property keywords, oneOf) — no validator dependency."""
+    if any(key not in payload for key in schema.get("required", [])):
+        return False
+    if not all(
+        _prop_ok(payload[key], prop)
+        for key, prop in schema.get("properties", {}).items()
+        if key in payload
+    ):
+        return False
+    return "oneOf" not in schema or sum(_conforms(payload, s) for s in schema["oneOf"]) == 1
 
 
 def _called_name(call: ast.Call) -> str | None:
@@ -107,6 +125,21 @@ def test_agent_message_types_are_in_schema() -> None:
 def test_schema_examples_are_valid_envelopes(kind: str, example: dict[str, Any]) -> None:
     assert _conforms(example, DEFS[kind])
     Envelope.model_validate({"v": PROTOCOL_VERSION, "type": kind, "payload": example})
+
+
+@pytest.mark.parametrize(
+    ("kind", "payload"),
+    [
+        ("say", {"text": " \n"}),
+        ("state", {"state": "sleeping"}),
+        ("reply", {"done": False, "degraded": False}),
+        ("reply", {"done": True, "degraded": False}),
+        ("reply", {"delta": "Hel", "done": True, "degraded": False}),
+        ("reply", {"text": "Hello!", "done": True}),
+    ],
+)
+def test_schema_rejects_bad_payloads(kind: str, payload: dict[str, Any]) -> None:
+    assert not _conforms(payload, DEFS[kind])
 
 
 @pytest.mark.parametrize(
