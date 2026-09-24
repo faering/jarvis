@@ -35,5 +35,6 @@ stateDiagram-v2
   starts before the reply is complete. The next chunk is synthesized while one plays.
 - **Barge-in:** `interrupt()` stops the sink, cancels in-flight TTS and drops all queued
   turns; chunks carry a turn id, so stale audio never plays.
-- **Backpressure:** pending text is bounded; when full, new chunks are dropped and logged
+- **Backpressure:** pending text chunks and in-flight turns are both bounded; when full,
+  the new chunk or turn is dropped and logged (a dropped turn reports `interrupted`)
   rather than blocking the loop. Audio output is the `AudioSink` seam (Pi speaker later).
