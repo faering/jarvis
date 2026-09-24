@@ -130,7 +130,7 @@ async function versionEndpoint(): Promise<string | null> {
   return ((await response.json()) as { version: string }).version;
 }
 
-describe.runIf(url && !expectIncompatible)(
+describe.runIf(Boolean(url) && !expectIncompatible)(
   "AgentClient against the agent",
   () => {
     it("opens after hello with the agent's version", async () => {
@@ -216,7 +216,7 @@ describe.runIf(url && !expectIncompatible)(
   },
 );
 
-describe.runIf(url && expectIncompatible)(
+describe.runIf(Boolean(url) && expectIncompatible)(
   "AgentClient against an incompatible agent",
   () => {
     it("stops at incompatible and does not retry", async () => {
