@@ -1,4 +1,4 @@
-# 0005. Release artifacts and gated per-component Pi deploy
+# 0006. Release artifacts and gated per-component Pi deploy
 Status: Accepted · Date: 2026-09-24
 
 ## Context
