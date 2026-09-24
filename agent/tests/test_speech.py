@@ -114,6 +114,16 @@ def test_segmenter_cuts_long_sentences_at_clauses_and_hard_limit() -> None:
     assert all(len(c) <= 30 for c in chunks) and " ".join(chunks) == words.strip()
 
 
+def test_segmenter_hard_cut_wins_over_a_later_boundary() -> None:
+    # One 250-char sentence: its "." lies past max_chars, so the hard cut must still apply.
+    sentence = ("word " * 50).strip() + ". "
+    seg = Segmenter()
+    chunks = seg.push(sentence) + seg.flush()
+    assert len(chunks) == 2
+    assert all(len(c) <= 200 for c in chunks)
+    assert " ".join(chunks) == sentence.strip()
+
+
 def test_segmenter_drops_unspeakable_and_handles_newlines() -> None:
     seg = Segmenter()
     assert seg.push("... \nFirst line\nSecond!") == ["First line"]
@@ -183,6 +193,27 @@ async def test_enqueue_never_blocks_and_drops_on_overflow() -> None:
         tts.release("Stuck.")
         await speech.wait(turn)
     assert tts.calls == ["Stuck.", "One.", "Two."]
+
+
+async def test_turns_are_bounded_when_synthesis_is_stuck() -> None:
+    events: list[SpeechEvent] = []
+    tts = FakeTTS(gated={"Stuck."})
+    async with SpeechQueue(
+        tts, NullSink(), on_event=events.append, max_pending=2, max_turns=3
+    ) as speech:
+        speech.say("Stuck.")
+        await until(lambda: tts.calls == ["Stuck."])  # synthesis hangs from here on
+        # Empty / punctuation-only replies enqueue only an end marker; they must not pile up.
+        turns = [speech.say(text) for _ in range(300) for text in ("", "...", "Hi.")]
+        assert len(speech._pending) <= 2 + 3
+        assert len(speech._done) <= 3
+        assert speech.dropped_turns == len(turns) - 2  # "Stuck." + 2 more fit in 3 turns
+        tts.release("Stuck.")
+        await asyncio.gather(*(speech.wait(turn) for turn in turns))
+        assert not speech.speaking
+
+    ends = [e.turn for e in events if e.kind in ("finished", "interrupted")]
+    assert sorted(ends) == list(range(1, len(turns) + 2))  # every turn ended exactly once
 
 
 # ---- barge-in --------------------------------------------------------------------------
@@ -275,5 +306,7 @@ async def test_aclose_cancels_everything_without_leaking_tasks() -> None:
 def test_rejects_bad_sizes() -> None:
     with pytest.raises(ValueError):
         SpeechQueue(MockTTS(), NullSink(), lookahead=0)
+    with pytest.raises(ValueError):
+        SpeechQueue(MockTTS(), NullSink(), max_turns=0)
     with pytest.raises(ValueError):
         Segmenter(min_clause_chars=50, max_chars=10)
