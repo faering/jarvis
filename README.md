@@ -1,5 +1,9 @@
 # Jarvis
 
+[![CI](https://github.com/faering/jarvis/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/faering/jarvis/actions/workflows/ci.yml)
+[![agent](https://img.shields.io/github/v/release/faering/jarvis?filter=agent-v*&label=agent)](https://github.com/faering/jarvis/releases?q=agent-v&expanded=true)
+[![app](https://img.shields.io/github/v/release/faering/jarvis?filter=app-v*&label=app&include_prereleases)](https://github.com/faering/jarvis/releases?q=app-v&expanded=true)
+
 A handheld, physically embodied AI companion — day planning, notes, calendar, and a
 sparring partner for hobby projects. Runs on a Raspberry Pi 5 (Hailo NPU + IMX500).
 
