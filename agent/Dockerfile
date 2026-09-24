@@ -15,6 +15,8 @@ RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.14-slim
 RUN useradd --system --uid 10001 --no-create-home jarvis
+# State store (JARVIS_STATE_DB default /data/jarvis.db); a named volume inherits this owner.
+RUN mkdir -p /data && chown jarvis /data
 COPY --from=build /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
