@@ -18,7 +18,7 @@ async def health() -> dict[str, str]:
 
 @app.get("/version")
 async def version() -> BuildInfo:
-    """Build provenance; ``version`` is the same canonical string the app displays."""
+    """Build provenance; ``version`` is the agent's canonical version (the app has its own)."""
     return build_info()
 
 
