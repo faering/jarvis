@@ -53,6 +53,14 @@ class SpeechQueue:
     Backpressure: at most ``max_pending`` text chunks wait for synthesis. Enqueueing never
     blocks — when full, the new chunk is dropped and logged (``dropped`` counts them). That
     many unspoken sentences means a runaway producer, and stalling the loop would be worse.
+
+    Turns are bounded the same way: at most ``max_turns`` turns are in flight (queued,
+    synthesizing or playing). ``begin_turn`` past that limit refuses the *new* turn — it
+    gets an id, is reported ``interrupted`` at once, ``wait()`` on it returns immediately
+    and its text is ignored (``dropped_turns`` counts them). So end-of-turn markers, which
+    are never dropped on their own, stay bounded too. Dropping the newest (rather than
+    evicting an older queued turn) matches the chunk policy and needs no extra staleness
+    tracking; a caller that wants the fresh turn to win calls ``interrupt()`` first.
     """
 
     def __init__(
@@ -62,15 +70,17 @@ class SpeechQueue:
         *,
         on_event: Callable[[SpeechEvent], None] | None = None,
         max_pending: int = 64,
+        max_turns: int = 16,
         lookahead: int = 1,
         segmenter: Callable[[], Segmenter] = Segmenter,
     ) -> None:
-        if max_pending < 1 or lookahead < 1:
-            raise ValueError("max_pending and lookahead must be >= 1")
+        if max_pending < 1 or max_turns < 1 or lookahead < 1:
+            raise ValueError("max_pending, max_turns and lookahead must be >= 1")
         self._tts = tts
         self._sink = sink
         self._on_event = on_event
         self._max_pending = max_pending
+        self._max_turns = max_turns
         self._new_segmenter = segmenter
 
         self._pending: collections.deque[_Chunk] = collections.deque()
@@ -89,6 +99,7 @@ class SpeechQueue:
         self._play_op: asyncio.Task[None] | None = None
         self._tasks: list[asyncio.Task[None]] = []
         self.dropped = 0
+        self.dropped_turns = 0
 
     # ---- lifecycle ---------------------------------------------------------------------
 
@@ -120,11 +131,18 @@ class SpeechQueue:
 
     def begin_turn(self) -> int:
         """Open a new turn and return its id. An open previous turn is ended (it still plays
-        in order); use ``interrupt()`` first to cut it off instead."""
+        in order); use ``interrupt()`` first to cut it off instead. If ``max_turns`` turns
+        are already in flight, the new turn is refused: reported ``interrupted`` right away
+        and its text ignored."""
         if self._open_turn is not None:
             self.end_turn(self._open_turn)
         self._last_turn += 1
         turn = self._last_turn
+        if len(self._done) >= self._max_turns:
+            self.dropped_turns += 1
+            logger.warning("speech: too many turns queued, dropped turn %d", turn)
+            self._emit("interrupted", turn)
+            return turn
         self._open_turn = turn
         self._segmenter = self._new_segmenter()
         self._done[turn] = asyncio.Event()
