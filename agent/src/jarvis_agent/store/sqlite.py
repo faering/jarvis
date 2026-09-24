@@ -120,9 +120,13 @@ class SqliteStore:
         """Write a consistent copy of the database to ``dest`` (atomically replaced).
 
         Uses SQLite's online backup, so it is safe while the store is in use. The copy is
-        self-contained (no WAL side files).
+        self-contained (no WAL side files). ``dest`` must not be the live database: replacing
+        that file would leave this connection writing to an unlinked inode.
         """
-        return await asyncio.to_thread(self._with_lock, _snapshot, Path(dest))
+        dest = Path(dest)
+        if self.path != ":memory:" and dest.resolve() == Path(self.path).resolve():
+            raise StoreError(f"snapshot destination is the live database: {dest}")
+        return await asyncio.to_thread(self._with_lock, _snapshot, dest)
 
     async def restore(self, src: str | Path) -> None:
         """Replace the whole database with the snapshot at ``src``, migrated forward.
