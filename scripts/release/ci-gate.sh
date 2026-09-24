@@ -17,9 +17,10 @@ deadline=$((SECONDS + timeout))
 
 # release-please publishes the release while the release commit's own CI is still running.
 while :; do
-  # filter=latest (the API default) keeps only the most recent run per check name.
-  result="$(gh api "repos/$repo/commits/$sha/check-runs?check_name=ci-ok" \
-    --jq '[.check_runs[]] | sort_by(.started_at) | last // {} | "\(.status // "missing") \(.conclusion // "-")"')"
+  # The newest run wins. Sort by id (monotonic), not started_at: a queued re-run has
+  # started_at null and would otherwise lose to an older completed run.
+  result="$(gh api "repos/$repo/commits/$sha/check-runs?check_name=ci-ok&filter=all" \
+    --jq '[.check_runs[]] | sort_by(.id) | last // {} | "\(.status // "missing") \(.conclusion // "-")"')"
   read -r status conclusion <<<"$result"
   if [[ "$status" == completed ]]; then
     if [[ "$conclusion" == success ]]; then

@@ -39,11 +39,20 @@ refuse() {
   exit 1
 }
 
+# A malformed or unreadable policy must never read as "no entries": refuse outright.
+jq -e 'type == "object" and ([.known_good, .blocked] | all(. == null or type == "array"))' \
+  "$file" >/dev/null 2>&1 || refuse "cannot read a valid policy from $file"
+
 [[ -n "$other_version" ]] || ok "other component not deployed"
 
-listed() { # listed <key>
+listed() { # listed <key>: 0 = listed, 1 = not listed; any jq error refuses
+  local rc=0
   jq -e --arg a "$agent" --arg p "$app" \
-    --arg k "$1" '.[$k] // [] | any(.agent == $a and .app == $p)' "$file" >/dev/null
+    --arg k "$1" '.[$k] // [] | any(.agent == $a and .app == $p)' "$file" >/dev/null || rc=$?
+  case "$rc" in
+    0 | 1) return "$rc" ;;
+    *) refuse "cannot evaluate $1 in $file (jq exit $rc)" ;;
+  esac
 }
 listed blocked && refuse "listed in blocked"
 listed known_good && ok "listed in known_good"
