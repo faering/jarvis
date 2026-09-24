@@ -11,6 +11,7 @@ restores a snapshot never meets a schema it can't read.
 """
 
 import asyncio
+import contextlib
 import os
 import sqlite3
 import threading
@@ -120,11 +121,10 @@ class SqliteStore:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 result = work(conn)
+                conn.execute("COMMIT")  # can fail too (disk full, deferred constraint)
             except BaseException:
-                if conn.in_transaction:  # some errors already rolled it back
-                    conn.execute("ROLLBACK")
+                _rollback(conn)
                 raise
-            conn.execute("COMMIT")
             return result
 
         return self._with_lock(in_transaction)
@@ -158,6 +158,14 @@ def _connect(path: str) -> sqlite3.Connection:
     return conn
 
 
+def _rollback(conn: sqlite3.Connection) -> None:
+    """Roll back an open transaction; some errors already did, and a failing rollback must
+    not mask the original error."""
+    if conn.in_transaction:
+        with contextlib.suppress(sqlite3.Error):
+            conn.execute("ROLLBACK")
+
+
 def _user_version(conn: sqlite3.Connection) -> int:
     return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
@@ -176,8 +184,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 f"BEGIN IMMEDIATE;\n{script}\nPRAGMA user_version = {number};\nCOMMIT;"
             )
         except sqlite3.Error as exc:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
+            _rollback(conn)
             raise StoreError(f"state store migration v{number} failed: {exc}") from exc
 
 

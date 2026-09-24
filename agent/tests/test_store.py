@@ -306,6 +306,32 @@ async def test_failed_work_rolls_back(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_failed_commit_rolls_back() -> None:
+    db = await SqliteStore.open(":memory:")
+
+    def fails_at_commit(conn: sqlite3.Connection) -> None:
+        # A deferred foreign key is checked only at COMMIT, so the work itself succeeds and
+        # the COMMIT raises, leaving the transaction open unless it is rolled back.
+        conn.execute("CREATE TABLE parent (id INTEGER PRIMARY KEY)")
+        conn.execute(
+            "CREATE TABLE child (parent_id INTEGER"
+            " REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED)"
+        )
+        conn.execute("INSERT INTO kv (key, value, updated_at) VALUES ('k', '1', 'now')")
+        conn.execute("INSERT INTO child VALUES (42)")
+
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+        await db.run(fails_at_commit)
+
+    def check(conn: sqlite3.Connection) -> tuple[int, int]:
+        tables = conn.execute("SELECT count(*) FROM sqlite_master WHERE name = 'child'")
+        return tables.fetchone()[0], conn.execute("SELECT count(*) FROM kv").fetchone()[0]
+
+    assert await db.run(check) == (0, 0)  # rolled back, and the store is usable again
+    await db.aclose()
+
+
+@pytest.mark.anyio
 async def test_many_concurrent_calls(state: State) -> None:
     notes = await asyncio.gather(*(state.notes.create(f"note {i}") for i in range(100)))
     await asyncio.gather(
