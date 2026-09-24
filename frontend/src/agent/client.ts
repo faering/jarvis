@@ -7,7 +7,7 @@ import {
   PROTOCOL_VERSION,
   type Envelope,
   type ErrorPayload,
-} from "./protocol.ts";
+} from "@jarvis/protocol";
 
 export const DEFAULT_AGENT_WS_URL = "ws://127.0.0.1:8000/ws";
 
