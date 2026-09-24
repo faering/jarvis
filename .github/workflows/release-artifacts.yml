@@ -9,6 +9,9 @@ run-name: release-artifacts ${{ inputs.tag || github.event.release.tag_name }}
 # Every release then gets manifest.json (version, docker tag, revision, protocol), uploaded
 # LAST: its presence means the release's artifacts are complete. deploy.yml consumes it.
 # Gate: nothing is built unless the tagged commit's `ci-ok` check passed.
+# Sources come from the tag; release tooling (.ci/) from github.workflow_sha, the commit
+# this workflow file was read from: the tag's commit on `release`, the dispatched branch
+# (default: main) on `workflow_dispatch` — so rebuilding an old tag uses current tooling.
 on:
   release:
     types: [published]
@@ -53,9 +56,10 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
-      # Release tooling from the workflow's own commit (older tags may predate it).
+      # Release tooling from the workflow file's own commit (older tags may predate it).
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.workflow_sha }}
           path: .ci
       - name: require green CI (ci-ok) on the tagged commit
         env:
@@ -75,9 +79,10 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0 # tags for version.sh
-      # Release tooling from the workflow's own commit (older tags may predate it).
+      # Release tooling from the workflow file's own commit (older tags may predate it).
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.workflow_sha }}
           path: .ci
       - name: provenance (scripts/version.sh)
         env:
@@ -150,9 +155,10 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
-      # Release tooling from the workflow's own commit (older tags may predate it).
+      # Release tooling from the workflow file's own commit (older tags may predate it).
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.workflow_sha }}
           path: .ci
       - name: provenance (scripts/version.sh)
         env:
@@ -210,9 +216,10 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
-      # Release tooling from the workflow's own commit (older tags may predate it).
+      # Release tooling from the workflow file's own commit (older tags may predate it).
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.workflow_sha }}
           path: .ci
       - name: write + attach manifest.json
         env:
