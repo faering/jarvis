@@ -141,7 +141,9 @@ contain `+`**, the same build has two forms — sanitized only where required:
 
 Compute once via `scripts/version.sh <component>` (emits both `CANONICAL` and `DOCKER_TAG`);
 feed `CANONICAL` to Vite (`VITE_APP_VERSION`) + the agent, and `DOCKER_TAG` to
-`docker build -t`. Agent and app then display the identical canonical value.
+`docker build -t`. Agent and app show the same **format**, each with its **own** component's
+version (independent releases, ADR 0004), so the values differ once their tags do; the app
+can also show the connected agent's version from the WebSocket `hello` frame.
 No `<component>-v*` tag yet → base `0.0.0`, ahead = total commit count
 (`0.0.0+<count>.g<sha>`). CI checkouts need `fetch-depth: 0`, or there are no tags.
 The agent serves it at `GET /version`; build the image with it via `scripts/compose-build.sh`.
