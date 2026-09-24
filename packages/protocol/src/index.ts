@@ -1,11 +1,31 @@
 /**
- * Agent <-> app WebSocket contract, envelope v0 — the TS mirror of
- * agent/src/jarvis_agent/protocol.py. Moves to packages/protocol with #32.
+ * Agent <-> app WebSocket contract, envelope v0 — the TS side of
+ * ../protocol.schema.json (the single source of truth; index.test.ts fails on
+ * drift). The Python side is agent/src/jarvis_agent/protocol.py.
  *
  * Every frame is `{ v: 0, type, id, payload }`.
  */
 
+/** Must equal the schema's `properties.v.const`. */
 export const PROTOCOL_VERSION = 0;
+
+/** Every message type in the schema's `$defs`. */
+export const MESSAGE_TYPES = [
+  "hello",
+  "ping",
+  "pong",
+  "error",
+  "say",
+  "state",
+  "transcript",
+  "reply",
+] as const;
+
+export type MessageType = (typeof MESSAGE_TYPES)[number];
+
+export function isMessageType(type: string): type is MessageType {
+  return (MESSAGE_TYPES as readonly string[]).includes(type);
+}
 
 export interface Envelope {
   v: number;
@@ -47,7 +67,12 @@ export function parseEnvelope(raw: string): Envelope | null {
   }
   if (!isRecord(data)) return null;
   const { v, type, id = null, payload = {} } = data;
-  if (typeof v !== "number" || typeof type !== "string" || type === "") {
+  if (
+    typeof v !== "number" ||
+    !Number.isInteger(v) ||
+    typeof type !== "string" ||
+    type === ""
+  ) {
     return null;
   }
   if ((id !== null && typeof id !== "string") || !isRecord(payload)) {

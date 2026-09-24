@@ -1,0 +1,334 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/faering/jarvis/blob/main/packages/protocol/protocol.schema.json",
+  "title": "Envelope",
+  "description": "Jarvis agent <-> app WebSocket contract: one JSON text frame, in either direction. The single source of truth for both sides (agent/src/jarvis_agent/protocol.py, packages/protocol/src/index.ts); tests on each side fail when they drift from this file. v is the protocol version: bump it (and PROTOCOL_VERSION on both sides) on any breaking change. Receivers ignore unknown payload fields. The app ignores unknown types; the agent answers one with error unknown_type, which the app tolerates (so a newer app can talk to an older agent). Under these rules adding a message type or an optional payload field is not breaking. To add a message type, add a $defs entry named after the type (payload schema + examples) and a matching allOf entry.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "description": "Protocol version; the compatibility discriminator.",
+      "type": "integer",
+      "const": 0
+    },
+    "type": {
+      "description": "Message type; see $defs.",
+      "type": "string",
+      "minLength": 1
+    },
+    "id": {
+      "description": "Correlates a reply with its request (pong echoes the ping's id); null when unused.",
+      "type": ["string", "null"],
+      "default": null
+    },
+    "payload": {
+      "description": "Type-specific body; see $defs.",
+      "type": "object",
+      "default": {}
+    }
+  },
+  "required": ["v", "type"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "hello"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/hello"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "ping"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ping"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "pong"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/pong"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/error"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "say"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/say"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "state"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/state"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "transcript"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/transcript"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "reply"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/reply"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hello": {
+      "description": "agent -> app, sent on connect. The app checks protocol (and the envelope v) against its own PROTOCOL_VERSION.",
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "integer"
+        },
+        "agent": {
+          "description": "Agent build version.",
+          "type": "string"
+        }
+      },
+      "required": ["protocol", "agent"],
+      "examples": [
+        {
+          "protocol": 0,
+          "agent": "0.1.0"
+        }
+      ]
+    },
+    "ping": {
+      "description": "app -> agent heartbeat; carries an id the pong echoes.",
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "examples": [{}]
+    },
+    "pong": {
+      "description": "agent -> app, answers a ping with the same id.",
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "examples": [{}]
+    },
+    "error": {
+      "description": "agent -> app; id is the offending request's id when known.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "Machine-readable, e.g. bad_json, bad_envelope, unknown_type.",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["code", "message"],
+      "examples": [
+        {
+          "code": "unknown_type",
+          "message": "unknown type 'x'"
+        }
+      ]
+    },
+    "say": {
+      "description": "app -> agent: a typed utterance for the voice loop; deep asks for the heavy route.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "description": "Non-blank utterance text.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "deep": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": ["text"],
+      "examples": [
+        {
+          "text": "What's on my calendar today?"
+        },
+        {
+          "text": "Plan my week",
+          "deep": true
+        }
+      ]
+    },
+    "state": {
+      "description": "agent -> app: the voice loop's state, sent on connect and on every change: idle | listening | routing | speaking | offloaded.",
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["idle", "listening", "routing", "speaking", "offloaded"]
+        }
+      },
+      "required": ["state"],
+      "examples": [
+        {
+          "state": "idle"
+        }
+      ]
+    },
+    "transcript": {
+      "description": "agent -> app: what the loop heard (or the typed say text).",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": ["text"],
+      "examples": [
+        {
+          "text": "hello"
+        }
+      ]
+    },
+    "reply": {
+      "description": "agent -> app: reply text. While streaming: {delta, done: false}; then one {text, done: true}. degraded: the heavy route failed and the local model answered. spoken: false when the reply was shown but not queued for speech (absent = spoken).",
+      "type": "object",
+      "properties": {
+        "delta": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "spoken": {
+          "type": "boolean"
+        }
+      },
+      "required": ["done", "degraded"],
+      "oneOf": [
+        {
+          "description": "Streaming chunk.",
+          "properties": {
+            "done": {
+              "const": false
+            }
+          },
+          "required": ["delta", "done", "degraded"]
+        },
+        {
+          "description": "Final frame with the full text.",
+          "properties": {
+            "done": {
+              "const": true
+            }
+          },
+          "required": ["text", "done", "degraded"]
+        }
+      ],
+      "examples": [
+        {
+          "delta": "Hel",
+          "done": false,
+          "degraded": false
+        },
+        {
+          "text": "Hello!",
+          "done": true,
+          "degraded": false
+        },
+        {
+          "text": "Hello!",
+          "done": true,
+          "degraded": false,
+          "spoken": false
+        }
+      ]
+    }
+  }
+}
