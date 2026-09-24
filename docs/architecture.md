@@ -93,3 +93,11 @@ Jarvis keeps its own state in one local SQLite file (`agent/src/jarvis_agent/sto
 - Every domain is an async provider interface; snapshots (SQLite online backup, typically
   well under 10 MB) cover only the local file and back promote/rollback (#67). Additive
   migrations keep the file readable by the previous release.
+
+## Protocol
+The WebSocket contract is one JSON Schema, `packages/protocol/protocol.schema.json`: the
+version `v`, and one `$defs` entry per message type ([ADR 0008](adr/0008-protocol-json-schema.md)).
+The app imports types and guards from `@jarvis/protocol`, and the agent keeps
+`jarvis_agent/protocol.py`. A test on each side fails if its code drifts from the schema. To
+add a message type, add it to the schema first, then use it on either side. Bump `v` only for
+a breaking change.
