@@ -85,9 +85,11 @@ on their own cadence, so we can ship a stable app and keep iterating the agent:
 
 **How release-please decides what to release — by the files a commit touches, NOT the
 scope.** So:
-- **Keep each commit within ONE component's path** (`agent/**` or `frontend/**`). A commit
-  touching both bumps both. Repo/infra files (`.devcontainer/`, `.github/`, root config)
-  are outside both paths → they trigger **no** release (correct).
+- **Keep each PR within ONE component's path** (`agent/**` or `frontend/**`), and each
+  commit too. release-please assigns every commit of a merged PR to every component the
+  **PR** touched, so a PR touching both paths lands in both changelogs (and bumps both).
+  Repo/infra files (`.devcontainer/`, `.github/`, root config, `packages/`) are outside both
+  paths → they trigger **no** release (correct) and may ride along in either kind of PR.
 - **Type drives the bump** (SemVer): `feat:` → minor, `fix:`/`perf:` → patch,
   `feat!:`/`fix!:` or a `BREAKING CHANGE:` footer → major. `docs/refactor/test/ci` show in
   the changelog but don't bump; `chore` is hidden.
