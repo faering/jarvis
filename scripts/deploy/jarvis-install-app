@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Root-owned installer for the Jarvis app .deb. docs/pi-setup.md installs it as
+# /usr/local/sbin/jarvis-install-app, and sudoers lets the deploy user run ONLY this
+# (not arbitrary apt-get): it installs a package named "jarvis" from the deploy user's
+# ~/jarvis/{incoming,app}/, and nothing else.
+#
+# Usage:  sudo -n /usr/local/sbin/jarvis-install-app <path-to-jarvis.deb>
+set -euo pipefail
+
+[[ $# -eq 1 ]] || {
+  echo "usage: $(basename "$0") <jarvis .deb>" >&2
+  exit 2
+}
+# Test hooks only; never honoured as root (sudo also resets the environment).
+if [[ $EUID -eq 0 ]]; then unset JARVIS_INSTALL_HOME APT_GET; fi
+user="${SUDO_USER:-$(id -un)}"
+home="${JARVIS_INSTALL_HOME:-$(getent passwd "$user" | cut -d: -f6)}"
+
+src="$(realpath -e -- "$1")"
+case "$src" in
+  "$home/jarvis/incoming/"*.deb | "$home/jarvis/app/"*.deb) ;;
+  *)
+    echo "refusing $src: not a .deb under $home/jarvis/{incoming,app}/" >&2
+    exit 1
+    ;;
+esac
+[[ -f "$src" ]] || {
+  echo "refusing $src: not a regular file" >&2
+  exit 1
+}
+
+# Check and install a private copy, so the deploy user can't swap the file in between.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+deb="$work/jarvis.deb"
+cp -- "$src" "$deb"
+pkg="$(dpkg-deb -f "$deb" Package)"
+[[ "$pkg" == jarvis ]] || {
+  echo "refusing $src: package '$pkg' is not 'jarvis'" >&2
+  exit 1
+}
+"${APT_GET:-apt-get}" install -y --allow-downgrades "$deb"

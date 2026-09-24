@@ -5,7 +5,8 @@
 # Usage:  remote-app.sh <deb-path> <expected-version> <protocol>
 #         <deb-path> is the staged candidate (deploy.yml: $JARVIS_DIR/incoming/). It is
 #         removed afterwards, and promoted to app/current.deb only once installed.
-# Env:    JARVIS_DIR (default ~/jarvis). Needs passwordless `sudo apt-get`.
+# Env:    JARVIS_DIR (default ~/jarvis). Needs passwordless sudo for
+#         /usr/local/sbin/jarvis-install-app only (docs/pi-setup.md).
 # State:  $JARVIS_DIR/state/app.env (read by the compat gate). The installed .deb is kept as
 #         app/current.deb (the next deploy's rollback target), the one before as previous.deb.
 set -euo pipefail
@@ -23,7 +24,7 @@ previous="$dir/app/previous.deb"
 log() { echo "[app-deploy] $*"; }
 state_get() { [[ -f "$1" ]] && sed -n "s/^$2=//p" "$1" | tail -n1 || true; }
 installed() { dpkg-query -W -f='${Status} ${Version}' "$1" 2>/dev/null | sed -n 's/^install ok installed //p'; }
-install() { sudo -n apt-get install -y --allow-downgrades "$1"; }
+install() { sudo -n /usr/local/sbin/jarvis-install-app "$1"; }
 keep() { cp -f "$1" "$2.tmp" && mv -f "$2.tmp" "$2"; } # keep <src> <dest>, atomically
 
 mkdir -p "$dir/state" "$dir/app"
