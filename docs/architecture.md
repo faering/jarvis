@@ -67,8 +67,22 @@ every role has a deterministic mock, the default in tests, CI and the devcontain
 | Vision | `detect` | mock only | IMX500 / Hailo (#35, #60) |
 
 ¹ Speaks Ollama's API; its OpenAI `/v1` compatibility is unverified until tested on the Pi.
-Selection is env-only: `JARVIS_<ROLE>_BACKEND=openai|mock` plus `_BASE_URL` / `_MODEL`
-(see `.env.example`), so dev ↔ Pi is a config change, not a code change.
+Selection is config: `JARVIS_<ROLE>_BACKEND=openai|mock` plus `_BASE_URL` / `_MODEL`
+(see `.env.example`) or `[backends.<role>]` in a config file, so dev ↔ Pi is a config
+change, not a code change.
+
+## Configuration & capabilities
+One validated config (`agent/src/jarvis_agent/config/`), layered, later wins: **defaults →
+profile preset** (`JARVIS_PROFILE=home|work|dev`, files in `config/profiles/`) **→ local
+TOML file** (`JARVIS_CONFIG`, e.g. `/data/jarvis.toml`) **→ env vars** (the `JARVIS_*`
+names above, plus `JARVIS_HW_<NAME>` / `JARVIS_CAP_<NAME>` = `on|off|auto`). Invalid config
+fails startup with every problem listed ([ADR 0007](adr/0007-layered-config-and-capabilities.md)).
+- **Hardware** (`hailo`, `imx500`, `mic`, `speaker`, `display`): `auto` probes `/dev`, `/sys`,
+  `/proc` at startup; off-device nothing is detected.
+- **Capabilities** (`voice`, `vision`, `notes`, `todo`, `calendar`, `heavy_reasoning`) declare
+  needs on hardware / backends / tools / state; the first satisfiable provider in `prefer`
+  order wins, else the capability is disabled with a reason, never a crash.
+- `python -m jarvis_agent.config` prints the resolved config (secrets masked) and report.
 
 ## Boundaries
 - **Python** = agent/API + tools (Docker). **TS/React** = frontend. **Rust** = Tauri backend only.
