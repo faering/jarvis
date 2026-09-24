@@ -289,6 +289,21 @@ async def test_refuses_a_db_missing_tables(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_snapshot_refuses_the_live_database(tmp_path: Path) -> None:
+    path = tmp_path / "jarvis.db"
+    state = await open_state(StoreSettings(db=str(path)))
+    try:
+        await state.kv.set("k", "v")
+        with pytest.raises(StoreError, match="live database"):
+            await state.snapshot(path)
+        with pytest.raises(StoreError, match="live database"):
+            await state.snapshot(tmp_path / "." / "jarvis.db")
+        assert await state.kv.get("k") == "v"  # still writing to the real file
+    finally:
+        await state.aclose()
+
+
+@pytest.mark.anyio
 async def test_snapshot_restore_round_trip(state: State, tmp_path: Path) -> None:
     note = await state.notes.create("before promote")
     await state.kv.set("prefs.voice", "jarvis")
