@@ -33,13 +33,16 @@ stateDiagram-v2
 `AudioSource` (mic + wake word + VAD, Pi-only) as `Wake` / `Utterance` / `Cancel`, or as
 text. Hot replies stream from the local LLM into speech; heavy ones go to
 `Router.offload()` and are spoken once no turn is in progress and the user is not
-talking. Recent turns from conversation memory are the LLM context. A `degraded` reply
-(heavy wanted, local answered) is spoken as-is and only flagged to the UI.
+talking. At most 4 heavy tasks are in flight; past that Jarvis says it is busy. Recent
+turns from conversation memory are the LLM context. A `degraded` reply (heavy wanted, local
+answered) is spoken as-is and only flagged to the UI.
 `runtime.py` builds it all in the FastAPI lifespan (audio out: `NullSink` off-device).
 
 WebSocket (envelope v0, additive): client `say` {text, deep?}; agent `state` {state},
 `transcript` {text}, `reply` {delta, done: false, degraded} while streaming, then
-`reply` {text, done: true, degraded}.
+`reply` {text, done: true, degraded, spoken?}. `spoken: false` means the speech queue was
+full, so the reply was shown but not said. A new client gets `hello`, then the current
+`state`.
 
 ## Speech output
 `jarvis_agent.speech.SpeechQueue` implements Speaking.
