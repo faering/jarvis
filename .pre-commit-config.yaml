@@ -110,3 +110,11 @@ repos:
         files: ^scripts/deploy/(check-compat|test_check_compat)\.sh$
         pass_filenames: false
         stages: [pre-push]
+
+      - id: remote-deploy-test
+        name: remote deploy script tests
+        language: system
+        entry: scripts/deploy/test_remote_deploy.sh
+        files: ^scripts/deploy/(remote-agent|remote-app|remote-state|test_remote_deploy)\.sh$
+        pass_filenames: false
+        stages: [pre-push]
