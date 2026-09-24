@@ -117,7 +117,7 @@ def _read_toml(path: Path, problems: list[str]) -> dict[str, Any]:
             return tomllib.load(f)
     except FileNotFoundError:
         problems.append(f"{path}: file not found")
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         problems.append(f"{path}: {exc}")
     return {}
 
