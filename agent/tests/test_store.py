@@ -241,6 +241,53 @@ async def test_refuses_a_db_from_a_newer_schema(tmp_path: Path) -> None:
         await SqliteStore.open(path)
 
 
+def make_future(path: Path, *, min_reader: int | None = None) -> None:
+    """Simulate a later release's migration on an existing store file (additive by default)."""
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE future_things (id INTEGER PRIMARY KEY)")
+    conn.execute("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+    if min_reader is not None:
+        conn.execute("UPDATE schema_meta SET min_reader = ?", (min_reader,))
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
+    conn.commit()
+    conn.close()
+
+
+@pytest.mark.anyio
+async def test_older_build_reads_a_newer_additive_db(tmp_path: Path) -> None:
+    path = tmp_path / "jarvis.db"
+    state = await open_state(StoreSettings(db=str(path)))
+    note = await state.notes.create("from before the upgrade")
+    await state.aclose()
+    make_future(path)  # the next release added a table and a defaulted column
+
+    state = await open_state(StoreSettings(db=str(path)))  # e.g. after a rollback
+    assert await state.notes.get(note.id) == note
+    assert (await state.notes.create("written by the older build")).title
+    assert await state.db.schema_version() == SCHEMA_VERSION + 1  # never downgraded
+    await state.aclose()
+
+
+@pytest.mark.anyio
+async def test_refuses_a_newer_db_that_needs_a_newer_reader(tmp_path: Path) -> None:
+    path = tmp_path / "jarvis.db"
+    await (await SqliteStore.open(path)).aclose()
+    make_future(path, min_reader=SCHEMA_VERSION + 1)  # a breaking migration
+    with pytest.raises(StoreError, match=f"at least v{SCHEMA_VERSION + 1}"):
+        await SqliteStore.open(path)
+
+
+@pytest.mark.anyio
+async def test_refuses_a_db_missing_tables(tmp_path: Path) -> None:
+    path = tmp_path / "jarvis.db"
+    await (await SqliteStore.open(path)).aclose()
+    conn = sqlite3.connect(path)
+    conn.execute("DROP TABLE todos")
+    conn.close()
+    with pytest.raises(StoreError, match="missing todos"):
+        await SqliteStore.open(path)
+
+
 @pytest.mark.anyio
 async def test_snapshot_restore_round_trip(state: State, tmp_path: Path) -> None:
     note = await state.notes.create("before promote")

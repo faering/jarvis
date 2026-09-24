@@ -5,9 +5,15 @@ One connection per store, guarded by a lock; every call runs in a worker thread 
 ``:memory:`` works too (tests).
 
 Schema changes are forward-only migrations tracked in ``PRAGMA user_version``. Add a new
-entry to ``MIGRATIONS``; never edit a released one. Per #67, a migration must stay readable
-by the previous release (add tables/columns, don't drop or rename), so a rollback that
-restores a snapshot never meets a schema it can't read.
+entry to ``MIGRATIONS``; never edit a released one.
+
+Reader compatibility (#67): each migration declares ``min_reader``, the oldest schema
+version that can still read the file after it runs; the database keeps the highest one in
+``schema_meta``. An additive migration (new tables, or new columns that are nullable or
+have a default; nothing dropped, renamed or retyped) keeps the previous ``min_reader``, so
+an older release still opens the file after a rollback. A breaking migration sets
+``min_reader`` to its own number. A build opens a file with a newer ``user_version`` only if
+its ``SCHEMA_VERSION >= min_reader``, and leaves that file's version as it is.
 """
 
 import asyncio
@@ -16,15 +22,29 @@ import os
 import sqlite3
 import threading
 from collections.abc import Callable
+from functools import cache
 from pathlib import Path
+from typing import NamedTuple
 
 from jarvis_agent.store.base import StoreError
 
 MEMORY = ":memory:"
 
-MIGRATIONS: tuple[str, ...] = (
+
+class Migration(NamedTuple):
+    script: str
+    min_reader: int  # oldest schema version that can read the file after this migration
+
+
+MIGRATIONS: tuple[Migration, ...] = (
     # 1: initial schema. Times are UTC ISO-8601 text (fixed width, so they sort as strings).
-    """
+    Migration(
+        min_reader=1,
+        script="""
+    CREATE TABLE schema_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        min_reader INTEGER NOT NULL
+    );
     CREATE TABLE notes (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -70,6 +90,7 @@ MIGRATIONS: tuple[str, ...] = (
         created_at TEXT NOT NULL
     );
     """,
+    ),
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -170,22 +191,74 @@ def _user_version(conn: sqlite3.Connection) -> int:
     return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
 
-def _migrate(conn: sqlite3.Connection) -> None:
+def _min_reader(conn: sqlite3.Connection) -> int | None:
+    try:
+        row = conn.execute("SELECT min_reader FROM schema_meta WHERE id = 1").fetchone()
+    except sqlite3.OperationalError:  # no schema_meta table
+        return None
+    return None if row is None else int(row[0])
+
+
+def _migrate(conn: sqlite3.Connection, what: str = "state store") -> None:
+    """Bring ``conn`` up to ``SCHEMA_VERSION``, or accept a newer file this build can read."""
     version = _user_version(conn)
     if version > SCHEMA_VERSION:
-        raise StoreError(
-            f"state store schema v{version} is newer than this build supports "
-            f"(v{SCHEMA_VERSION}); refusing to open it"
-        )
-    for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
+        min_reader = _min_reader(conn)
+        if min_reader is None or min_reader > SCHEMA_VERSION:
+            needs = "an unknown version" if min_reader is None else f"v{min_reader}"
+            raise StoreError(
+                f"{what} schema v{version} is newer than this build (v{SCHEMA_VERSION}) and "
+                f"needs a reader of at least {needs}; refusing to open it"
+            )
+    for number, migration in enumerate(MIGRATIONS[version:], start=version + 1):
         # executescript runs the statements verbatim; user_version is transactional.
         try:
             conn.executescript(
-                f"BEGIN IMMEDIATE;\n{script}\nPRAGMA user_version = {number};\nCOMMIT;"
+                f"BEGIN IMMEDIATE;\n{migration.script}\n"
+                "INSERT INTO schema_meta (id, min_reader)"
+                f" VALUES (1, {migration.min_reader})"
+                " ON CONFLICT (id) DO UPDATE"
+                " SET min_reader = max(min_reader, excluded.min_reader);\n"
+                f"PRAGMA user_version = {number};\nCOMMIT;"
             )
         except sqlite3.Error as exc:
             _rollback(conn)
-            raise StoreError(f"state store migration v{number} failed: {exc}") from exc
+            raise StoreError(f"{what} migration v{number} failed: {exc}") from exc
+    _check_schema(conn, what)
+
+
+@cache
+def _expected_schema() -> dict[str, frozenset[str]]:
+    """Tables and columns this build needs: those of a freshly migrated database."""
+    conn = sqlite3.connect(MEMORY, autocommit=True)
+    try:
+        for migration in MIGRATIONS:
+            conn.executescript(migration.script)
+        return _schema(conn)
+    finally:
+        conn.close()
+
+
+def _schema(conn: sqlite3.Connection) -> dict[str, frozenset[str]]:
+    tables = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchall()
+    return {
+        name: frozenset(row[1] for row in conn.execute(f'PRAGMA table_info("{name}")'))
+        for (name,) in tables
+    }
+
+
+def _check_schema(conn: sqlite3.Connection, what: str) -> None:
+    """Refuse a database missing tables or columns this build uses (extra ones are fine)."""
+    actual = _schema(conn)
+    missing = sorted(
+        table if table not in actual else f"{table}.{column}"
+        for table, columns in _expected_schema().items()
+        for column in (columns - actual[table] if table in actual else [""])
+    )
+    if missing:
+        raise StoreError(f"{what} is missing {', '.join(missing)}; refusing to open it")
 
 
 def _snapshot(conn: sqlite3.Connection, dest: Path) -> Path:
