@@ -1,0 +1,6 @@
+# Laptop / devcontainer / CI: no Pi accelerators. Audio and display still probe, so a
+# laptop with a mic and speaker gets voice. Backends stay mocks unless env says otherwise.
+
+[hardware]
+hailo = "off"
+imx500 = "off"

@@ -32,7 +32,8 @@ Four layers: **hardware** (probed) → **backends** (model serving) → **capabi
 agent/                    Python — Jarvis core, the deployable agent
   src/jarvis_agent/
     core/                 loop, state machine, router
-    hardware/             device probes + drivers (Pi-only)
+    hardware/             device probes; drivers (Pi-only)
+    config/               layered config; profiles/ home, work, dev (TOML)
     backends/             model-serving clients (local | faelab)
     capabilities/         manifests + providers (local | faelab)
     tools/                MCP client + built-in tools
@@ -42,7 +43,6 @@ agent/                    Python — Jarvis core, the deployable agent
 frontend/                 Tauri app — TS/React UI + src-tauri/ (Rust)
 packages/                 shared TS — protocol (WS + events), ui, config
 models/                   manifest.yaml (tracked); models/store/ (weights) is git-ignored
-profiles/                 home.yaml, work.yaml, dev.yaml
 deploy/                   compose, systemd units, deploy supervisor
 docs/                     architecture, state machine, deployment
 scripts/                  ci-local.sh, version.sh
