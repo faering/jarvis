@@ -138,6 +138,16 @@ ok "installer refuses a symlink pointing outside" not installer "$home/jarvis/in
 printf 'Package=evil\nVersion=1\n' >"$home/jarvis/incoming/evil.deb"
 ok "installer refuses another package name" not installer "$home/jarvis/incoming/evil.deb"
 ok "installer refuses extra arguments" not installer "$home/jarvis/incoming/good.deb" -o x
+ok "installer refuses '..' in the path" not installer "$home/jarvis/incoming/../../elsewhere/x.deb"
+mkdir -p "$home/jarvis/incoming/sub" && deb "$home/jarvis/incoming/sub/n.deb" 1.0.0
+ok "installer refuses a nested path" not installer "$home/jarvis/incoming/sub/n.deb"
+mkdir -p "$home/jarvis/incoming/dir.deb"
+ok "installer refuses a directory" not installer "$home/jarvis/incoming/dir.deb"
+# A directory swapped for a symlink (e.g. mid-deploy) must not redirect the copy.
+deb "$home/elsewhere/good.deb" 1.0.0
+mv "$home/jarvis/app" "$home/jarvis/app.real" && ln -s "$home/elsewhere" "$home/jarvis/app"
+ok "installer refuses a symlinked directory" not installer "$home/jarvis/app/good.deb"
+rm "$home/jarvis/app" && mv "$home/jarvis/app.real" "$home/jarvis/app"
 
 echo "$pass passed, $fail failed"
 ((fail == 0))

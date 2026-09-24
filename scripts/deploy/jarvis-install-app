@@ -16,27 +16,45 @@ if [[ $EUID -eq 0 ]]; then unset JARVIS_INSTALL_HOME APT_GET; fi
 user="${SUDO_USER:-$(id -un)}"
 home="${JARVIS_INSTALL_HOME:-$(getent passwd "$user" | cut -d: -f6)}"
 
-src="$(realpath -e -- "$1")"
-case "$src" in
-  "$home/jarvis/incoming/"*.deb | "$home/jarvis/app/"*.deb) ;;
+# The path must be literally <home>/jarvis/{incoming,app}/<name>.deb: no "..", no deeper dirs.
+case "$1" in
+  "$home/jarvis/incoming/"* | "$home/jarvis/app/"*) ;;
   *)
-    echo "refusing $src: not a .deb under $home/jarvis/{incoming,app}/" >&2
+    echo "refusing $1: not under $home/jarvis/{incoming,app}/" >&2
     exit 1
     ;;
 esac
-[[ -f "$src" ]] || {
-  echo "refusing $src: not a regular file" >&2
+rel="${1#"$home"/jarvis/}"
+sub="${rel%%/*}" name="${rel#*/}"
+if [[ "$name" == */* || "$name" == .* || "$name" != *.deb ]]; then
+  echo "refusing $1: expected a .deb directly in $home/jarvis/$sub/" >&2
   exit 1
-}
+fi
 
-# Check and install a private copy, so the deploy user can't swap the file in between.
+# Copy the bytes into a root-owned private file. Every path component below the (root-owned)
+# /home is opened with O_NOFOLLOW, relative to its parent's descriptor, and the source must be
+# a regular file: a symlink or directory swap by the deploy user can't redirect the copy.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 deb="$work/jarvis.deb"
-cp -P -- "$src" "$deb" # -P: a symlink swapped in after the check is copied as a link, not followed
+python3 - "$home" "$sub" "$name" "$deb" <<'PY'
+import os, shutil, stat, sys
+home, sub, name, dest = sys.argv[1:]
+nofollow = os.O_RDONLY | os.O_NOFOLLOW
+fd = os.open(home, nofollow | os.O_DIRECTORY)
+for part in ("jarvis", sub):
+    fd = os.open(part, nofollow | os.O_DIRECTORY, dir_fd=fd)
+src = os.open(name, nofollow, dir_fd=fd)
+if not stat.S_ISREG(os.fstat(src).st_mode):
+    sys.exit(f"refusing {name}: not a regular file")
+with os.fdopen(src, "rb") as fsrc, open(dest, "xb") as fdst:
+    shutil.copyfileobj(fsrc, fdst)
+PY
+[[ -f "$deb" && ! -L "$deb" ]] || exit 1
+
 pkg="$(dpkg-deb -f "$deb" Package)"
 [[ "$pkg" == jarvis ]] || {
-  echo "refusing $src: package '$pkg' is not 'jarvis'" >&2
+  echo "refusing $1: package '$pkg' is not 'jarvis'" >&2
   exit 1
 }
 "${APT_GET:-apt-get}" install -y --allow-downgrades "$deb"
