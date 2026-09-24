@@ -14,6 +14,7 @@ from jarvis_agent.backends import LLM, BackendError, ChatMessage
 from jarvis_agent.backends.mock import MockSTT
 from jarvis_agent.loop import (
     Cancel,
+    LoopBusy,
     LoopEvent,
     LoopState,
     ReplyText,
@@ -190,6 +191,7 @@ async def running(
     stt: MockSTT | None = None,
     max_turns: int = 16,
     max_offloads: int = 4,
+    max_pending: int = 64,
 ) -> AsyncIterator[Harness]:
     state = await open_state(StoreSettings(db=":memory:"))
     router = Router(
@@ -207,7 +209,7 @@ async def running(
 
     router.offload = spy  # type: ignore[method-assign]
     sink = sink or Sink()
-    speech = SpeechQueue(TextTTS(), sink, max_turns=max_turns)
+    speech = SpeechQueue(TextTTS(), sink, max_turns=max_turns, max_pending=max_pending)
     speech.start()
     loop = VoiceLoop(router, speech, stt or MockSTT(), state.memory, max_offloads=max_offloads)
     events = Recorder()
@@ -384,6 +386,30 @@ async def test_offloads_are_bounded_and_the_overflow_is_told_busy() -> None:
         assert h.events.replies[1].text == "heavy answer"
         h.loop.say("and my year", deep=True)
         await h.events.until(lambda: len(h.handles) == 2)
+
+
+async def test_input_is_bounded_and_the_overflow_raises_busy() -> None:
+    async with running(ScriptLLM()) as h:
+        # Not started, so nothing drains its inbox: the bound is what stops the flood.
+        idle = VoiceLoop(
+            h.router, SpeechQueue(TextTTS(), Sink()), MockSTT(), h.state.memory, max_inputs=2
+        )
+        idle.say("one")
+        idle.say("two")
+        with pytest.raises(LoopBusy):
+            idle.say("three")
+        await idle.aclose()
+
+
+async def test_reply_with_dropped_chunks_is_not_claimed_spoken() -> None:
+    sink = Sink(hold=True)  # the first chunk plays and holds; later ones pile up
+    llm = ScriptLLM(["One. ", "Two. ", "Three. ", "Four. ", "Five."])
+    async with running(llm, sink=sink, max_pending=1) as h:
+        h.loop.say("count")
+        await h.events.until(lambda: any(r.done for r in h.events.replies))
+        final = [r for r in h.events.replies if r.done][-1]
+        assert final.text == "One. Two. Three. Four. Five."
+        assert final.spoken is False  # some chunks never reached the speech queue
 
 
 async def test_reply_refused_by_the_speech_queue_is_not_claimed_spoken() -> None:
