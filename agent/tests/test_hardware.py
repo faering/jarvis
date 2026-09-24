@@ -67,5 +67,22 @@ def test_a_failing_probe_counts_as_absent() -> None:
         raise PermissionError("no access to /sys")
 
     status = detect({"hailo": "auto", "mic": "auto"}, {"hailo": broken})
-    assert status["hailo"] == HardwareStatus(False, "probe failed: no access to /sys")
+    assert status["hailo"] == HardwareStatus(
+        False, "probe failed: PermissionError: no access to /sys"
+    )
     assert status["mic"].reason == "not detected"  # no probe registered
+
+
+def test_any_probe_exception_counts_as_absent(tmp_path: Path) -> None:
+    def buggy() -> str | None:
+        raise RuntimeError("driver query failed")
+
+    (tmp_path / "sys/class/video4linux/video0").mkdir(parents=True)
+    (tmp_path / "sys/class/video4linux/video0/name").write_bytes(b"imx\xff\xfe500\n")
+    probes = default_probes(tmp_path) | {"hailo": buggy}
+    status = detect({"hailo": "auto", "imx500": "auto"}, probes)
+    assert status["hailo"] == HardwareStatus(
+        False, "probe failed: RuntimeError: driver query failed"
+    )
+    assert not status["imx500"].present
+    assert status["imx500"].reason.startswith("probe failed: UnicodeDecodeError: ")

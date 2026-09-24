@@ -80,8 +80,10 @@ def detect(
 ) -> dict[str, HardwareStatus]:
     """Resolve every toggle: ``on``/``off`` are trusted as-is, ``auto`` runs its probe.
 
-    A probe that raises counts as not detected (with the error as the reason), so a flaky
-    ``/sys`` read never stops startup.
+    A probe that raises any ``Exception`` counts as not detected (with the error as the
+    reason), so a flaky ``/sys`` read, undecodable text or a buggy injected probe never
+    stops startup. ``BaseException`` (e.g. ``CancelledError``, ``KeyboardInterrupt``)
+    still propagates.
     """
     probes = default_probes() if probes is None else probes
     status: dict[str, HardwareStatus] = {}
@@ -92,9 +94,9 @@ def detect(
         probe = probes.get(name)
         try:
             evidence = probe() if probe else None
-        except OSError as exc:
-            log.warning("hardware probe %s failed: %s", name, exc)
-            status[name] = HardwareStatus(False, f"probe failed: {exc}")
+        except Exception as exc:  # best-effort boundary: see docstring
+            log.warning("hardware probe %s failed: %r", name, exc)
+            status[name] = HardwareStatus(False, f"probe failed: {type(exc).__name__}: {exc}")
             continue
         status[name] = (
             HardwareStatus(True, f"detected: {evidence}")
