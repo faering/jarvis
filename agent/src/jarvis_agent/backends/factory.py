@@ -19,6 +19,7 @@ class Backends:
     stt: STT
     tts: TTS
     vision: Vision
+    heavy_llm: LLM | None = None  # None = not configured; heavy tasks use ``llm``
     _clients: list[httpx.AsyncClient] = field(default_factory=list, repr=False)
 
     async def aclose(self) -> None:
@@ -47,7 +48,15 @@ def build_backends(settings: BackendSettings | None = None) -> Backends:
     if settings.tts.backend == "openai":
         tts = OpenAITTS(client_for(settings.tts), _model(settings.tts), settings.tts.voice)
 
-    return Backends(llm=llm, stt=stt, tts=tts, vision=MockVision(), _clients=clients)
+    heavy_llm: LLM | None = None
+    if settings.heavy_llm.backend == "openai":
+        heavy_llm = OpenAILLM(client_for(settings.heavy_llm), _model(settings.heavy_llm))
+    elif settings.heavy_llm.backend == "mock":
+        heavy_llm = MockLLM(name="mock heavy")
+
+    return Backends(
+        llm=llm, stt=stt, tts=tts, vision=MockVision(), heavy_llm=heavy_llm, _clients=clients
+    )
 
 
 def _http_client(role: RoleSettings) -> httpx.AsyncClient:

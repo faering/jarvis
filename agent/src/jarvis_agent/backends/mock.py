@@ -8,13 +8,16 @@ from jarvis_agent.backends.base import ChatMessage, Detection
 
 
 class MockLLM:
-    """Echoes the last user message."""
+    """Echoes the last user message, as ``"<name> reply to: <message>"``."""
+
+    def __init__(self, name: str = "mock") -> None:
+        self.name = name
 
     async def chat(self, messages: list[ChatMessage]) -> str:
-        return _mock_reply(messages)
+        return _mock_reply(self.name, messages)
 
     async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
-        words = _mock_reply(messages).split(" ")
+        words = _mock_reply(self.name, messages).split(" ")
         for index, word in enumerate(words):
             yield word if index == len(words) - 1 else word + " "
 
@@ -53,6 +56,6 @@ def silent_wav(seconds: float, sample_rate: int = 16_000) -> bytes:
     return buffer.getvalue()
 
 
-def _mock_reply(messages: list[ChatMessage]) -> str:
+def _mock_reply(name: str, messages: list[ChatMessage]) -> str:
     last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-    return f"mock reply to: {last_user}"
+    return f"{name} reply to: {last_user}"
