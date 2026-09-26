@@ -40,8 +40,10 @@ answered) is spoken as-is and only flagged to the UI.
 
 WebSocket (envelope v0, additive): client `say` {text, deep?}; agent `state` {state},
 `transcript` {text}, `reply` {delta, done: false, degraded} while streaming, then
-`reply` {text, done: true, degraded, spoken?}. `spoken: false` means the speech queue was
-full, so the reply was shown but not said. A new client gets `hello`, then the current
+`reply` {text, done: true, degraded, spoken?}. `done` means the reply is complete; storing
+it in memory is best-effort (a failure is logged). `spoken: false` means the speech queue
+refused or dropped it, or its TTS/playback had already failed, so it was shown but not
+(fully) said. Speech plays on after `done`; later failures are only logged. A new client gets `hello`, then the current
 `state`.
 
 ## Speech output
