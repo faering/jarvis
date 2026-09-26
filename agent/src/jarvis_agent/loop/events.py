@@ -31,8 +31,11 @@ class ReplyText:
     """Reply text for the UI. Streaming frames carry ``delta`` with ``done=False``; the last
     frame of a reply carries the full ``text`` with ``done=True``. An offloaded reply is a
     single ``done`` frame. ``degraded``: the heavy model was wanted but could not answer.
-    ``spoken`` (``done`` frames): False if the speech queue refused the reply (too many
-    turns queued), so it was shown but not said."""
+    A ``done`` frame means the reply is complete (shown and handed to speech); storing it
+    in memory is best-effort. ``spoken`` (``done`` frames): False if the speech queue
+    refused or dropped (part of) the reply, or its TTS/playback had already failed, so it
+    was shown but not (fully) said. Speech continues after ``done``: later failures are
+    only logged."""
 
     delta: str | None = None
     text: str | None = None

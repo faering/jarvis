@@ -15,7 +15,7 @@ import collections
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from jarvis_agent.backends.base import TTS
 from jarvis_agent.speech.segmenter import Segmenter
@@ -61,6 +61,9 @@ class SpeechQueue:
     are never dropped on their own, stay bounded too. Dropping the newest (rather than
     evicting an older queued turn) matches the chunk policy and needs no extra staleness
     tracking; a caller that wants the fresh turn to win calls ``interrupt()`` first.
+
+    A chunk whose TTS or playback fails is skipped (logged); ``failed`` counts them and
+    ``has_failed(turn)`` reports it for a turn still in flight.
     """
 
     def __init__(
@@ -94,12 +97,14 @@ class SpeechQueue:
         self._segmenter = segmenter()
         self._done: dict[int, asyncio.Event] = {}  # issued, not yet finished/interrupted
         self._started: set[int] = set()
+        self._failed_turns: set[int] = set()  # in flight, with a chunk that failed
 
         self._synth_op: asyncio.Task[bytes] | None = None
         self._play_op: asyncio.Task[None] | None = None
         self._tasks: list[asyncio.Task[None]] = []
         self.dropped = 0
         self.dropped_turns = 0
+        self.failed = 0
 
     # ---- lifecycle ---------------------------------------------------------------------
 
@@ -188,6 +193,7 @@ class SpeechQueue:
                 op.cancel()
         cut, self._done = self._done, {}
         self._started.clear()
+        self._failed_turns.clear()
         for turn, done in cut.items():
             done.set()
             self._emit("interrupted", turn)
@@ -200,6 +206,11 @@ class SpeechQueue:
         """Wait until ``turn`` has finished or been interrupted."""
         if done := self._done.get(turn):
             await done.wait()
+
+    def has_failed(self, turn: int) -> bool:
+        """True if TTS or playback of a chunk of ``turn`` has failed so far. Only known for
+        a turn still in flight: it is forgotten once the turn finishes or is interrupted."""
+        return turn in self._failed_turns
 
     @property
     def speaking(self) -> bool:
@@ -238,9 +249,10 @@ class SpeechQueue:
             if chunk.text is None:
                 await self._ready.put(_Audio(chunk.turn, None))
                 continue
-            self._synth_op = asyncio.ensure_future(self._tts.synthesize(chunk.text))
-            wav = await _settle(self._synth_op, "tts.synthesize")
+            self._synth_op = op = asyncio.ensure_future(self._tts.synthesize(chunk.text))
+            wav = await _settle(op, "tts.synthesize")
             self._synth_op = None
+            self._check(op, chunk.turn)
             if wav is not None and not self._stale(chunk.turn):
                 await self._ready.put(_Audio(chunk.turn, wav))
 
@@ -255,12 +267,22 @@ class SpeechQueue:
             if audio.turn not in self._started:
                 self._started.add(audio.turn)
                 self._emit("started", audio.turn)
-            self._play_op = asyncio.ensure_future(self._sink.play(audio.wav))
-            await _settle(self._play_op, "sink.play")
+            self._play_op = op = asyncio.ensure_future(self._sink.play(audio.wav))
+            await _settle(op, "sink.play")
             self._play_op = None
+            self._check(op, audio.turn)
+
+    def _check(self, op: asyncio.Future[Any], turn: int) -> None:
+        """Record a failed (not cancelled) TTS or playback of a chunk of ``turn``."""
+        if op.cancelled() or op.exception() is None:
+            return
+        self.failed += 1
+        if turn in self._done:
+            self._failed_turns.add(turn)
 
     def _finish(self, turn: int) -> None:
         self._started.discard(turn)
+        self._failed_turns.discard(turn)
         if done := self._done.pop(turn, None):
             done.set()
             self._emit("finished", turn)

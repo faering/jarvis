@@ -14,8 +14,11 @@ the inbox:
   are in flight (running or waiting to be spoken); past that, Jarvis says ``BUSY``.
 - speech watchers: Speaking -> Idle once the queue has played everything.
 
-A reply the ``SpeechQueue`` refused (its ``max_turns`` limit) is still shown and remembered,
-but its ``done`` event says ``spoken=False``.
+A ``done`` event means the reply is complete: shown, and handed to the ``SpeechQueue``.
+It says ``spoken=False`` if the queue refused the turn or dropped a chunk of it, or TTS or
+playback of part of it had already failed by then; speech runs on after ``done``, so later
+failures are only logged. Memory is best-effort: a store failure is logged and the reply
+still completes (and ``done`` is still sent).
 """
 
 import asyncio
@@ -328,7 +331,7 @@ class VoiceLoop:
         """Hot path: stream the local LLM into speech as it generates."""
         llm = self._router.hot().backend
         assert llm is not None  # hot() only returns available providers
-        turn, spoken = self._begin_turn()
+        turn, accepted = self._begin_turn()
         dropped = self._speech.dropped  # chunks the queue drops count as not spoken
         self._post(generation, StateChanged(LoopState.SPEAKING))
         parts: list[str] = []
@@ -342,15 +345,14 @@ class VoiceLoop:
             if not parts:  # nothing said yet: apologise, and don't remember the apology
                 self._speech.feed(turn, SORRY)
                 self._speech.end_turn(turn)
-                spoken = spoken and self._speech.dropped == dropped
+                spoken = self._spoken(turn, accepted, dropped)
                 self._post(generation, ReplyText(text=SORRY, done=True, spoken=spoken))
                 return turn
             # Cut off mid-reply: what was already said is kept and remembered.
         self._speech.end_turn(turn)
-        spoken = spoken and self._speech.dropped == dropped
+        spoken = self._spoken(turn, accepted, dropped)
         text = "".join(parts)
-        await self._remember(text)
-        # done = remembered, and queued for speech unless spoken=False
+        await self._remember(text)  # best-effort: done is sent even if this fails
         self._post(generation, ReplyText(text=text, done=True, spoken=spoken))
         return turn
 
@@ -367,7 +369,8 @@ class VoiceLoop:
     # ---- helpers -----------------------------------------------------------------------
 
     async def _remember(self, reply: str) -> None:
-        """Store an assistant turn; a store failure must not cut the reply short."""
+        """Store an assistant turn, best-effort: a store failure is logged and must not cut
+        the reply short (stores raise ``StoreError``; ``SqliteStore`` wraps sqlite3 errors)."""
         try:
             await self._memory.append("assistant", reply)
         except StoreError as exc:
@@ -385,12 +388,19 @@ class VoiceLoop:
         return turn, self._speech.dropped_turns == dropped
 
     def _say_turn(self, text: str) -> tuple[int, bool]:
-        """Speak ``text`` as its own turn; returns the turn id and whether it was accepted."""
-        turn, spoken = self._begin_turn()
+        """Speak ``text`` as its own turn; returns the turn id and ``spoken`` (``_spoken``)."""
+        turn, accepted = self._begin_turn()
         dropped = self._speech.dropped
         self._speech.feed(turn, text)
         self._speech.end_turn(turn)
-        return turn, spoken and self._speech.dropped == dropped
+        return turn, self._spoken(turn, accepted, dropped)
+
+    def _spoken(self, turn: int, accepted: bool, dropped: int) -> bool:
+        """``spoken`` for a done frame, as known now: the turn was accepted, none of its
+        chunks were dropped (``dropped`` = the queue's count when it began), and no TTS or
+        playback of it has failed yet. Call it right after ``end_turn``, before awaiting:
+        the turn is then still in flight, so ``has_failed`` still knows about it."""
+        return accepted and self._speech.dropped == dropped and not self._speech.has_failed(turn)
 
     def _watch(self, speech_turn: int) -> None:
         async def watch() -> None:
