@@ -283,6 +283,23 @@ async def test_tts_and_sink_errors_skip_the_chunk_and_continue() -> None:
     assert [e.kind for e in events] == ["started", "finished"]
 
 
+async def test_failures_are_counted_and_known_per_turn_while_in_flight() -> None:
+    tts, sink = FakeTTS(failing={"Bad."}), FakeSink(hold=True, fail={b"Worse."})
+    async with SpeechQueue(tts, sink) as speech:
+        clean = speech.say("Good.")
+        turn = speech.say("Bad. Worse. Fine.")
+        await until(lambda: speech.has_failed(turn))  # TTS of "Bad." failed, still queued
+        assert not speech.has_failed(clean)
+        sink.finish()  # "Good."
+        await until(lambda: speech.failed == 2)  # playing "Worse." failed too
+        assert speech.has_failed(turn)
+        await until(lambda: sink.playing)
+        sink.finish()  # "Fine."
+        await speech.wait(turn)
+        assert not speech.has_failed(turn)  # forgotten once the turn is over
+    assert sink.played == [b"Good.", b"Fine."]
+
+
 # ---- lifecycle -------------------------------------------------------------------------
 
 
