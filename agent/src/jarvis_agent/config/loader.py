@@ -103,10 +103,10 @@ def load_config(
         raise ConfigError([_describe(err, merged) for err in exc.errors()]) from None
     config._sources = tuple(sources)
     for cap, cfg in config.capabilities.items():  # so later checks can name the layer
-        cfg._origins = {
-            path[2]: src
+        cfg._origins = {  # "" = the table itself, when it was given empty
+            path[2] if len(path) > 2 else "": src
             for path, (_, src) in merged.items()
-            if path[:2] == ("capabilities", cap) and len(path) > 2
+            if path[:2] == ("capabilities", cap)
         }
     return config
 
@@ -146,9 +146,9 @@ def _flatten(data: Mapping[str, Any], source: str, prefix: tuple[str, ...] = ())
         path = (*prefix, key)
         if prefix == ("capabilities",) and isinstance(value, str):
             value = {"enabled": value}  # shorthand, so it merges with a table elsewhere
-        if isinstance(value, dict):  # an empty table adds nothing, like in any merge
+        if isinstance(value, dict) and value:
             leaves |= _flatten(value, source, path)
-        else:
+        else:  # an empty table is a leaf too, so a bare `[capabilities.x]` still gets checked
             leaves[path] = (value, source)
     return leaves
 
@@ -163,6 +163,9 @@ def _merge(layers: list[Leaves]) -> Leaves:
     merged: Leaves = {}
     for layer in layers:
         for path, leaf in layer.items():
+            # An empty table only marks presence: it keeps what lower layers set below it.
+            if leaf[0] == {} and any(len(p) > len(path) and _related(p, path) for p in merged):
+                continue
             # A later value replaces whatever the lower layers had at, above or below it.
             for old in [p for p in merged if _related(p, path)]:
                 del merged[old]
