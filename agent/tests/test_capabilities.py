@@ -121,6 +121,26 @@ def test_unknown_names_name_their_config_layer(tmp_path: Path) -> None:
     assert check_config({"teleport": CapabilityConfig()})[0].endswith("voice)")  # built in code
 
 
+def test_an_empty_table_still_names_an_unknown_capability(tmp_path: Path) -> None:
+    local = tmp_path / "jarvis.toml"
+    local.write_text("[capabilities.teleport]\n")
+    config = load_config({"JARVIS_CONFIG": str(local)})
+    with pytest.raises(ConfigError) as exc:
+        resolve(available(), config.capabilities)
+    assert exc.value.problems == [
+        "capabilities.teleport: unknown capability "
+        "(known: calendar, heavy_reasoning, notes, todo, vision, voice) "
+        f"(from file {local})"
+    ]
+
+
+def test_an_empty_table_keeps_lower_layers(tmp_path: Path) -> None:
+    local = tmp_path / "jarvis.toml"
+    local.write_text('profile = "work"\n[capabilities.vision]\n')  # work sets vision "off"
+    vision = load_config({"JARVIS_CONFIG": str(local)}).capabilities["vision"]
+    assert (vision.enabled, vision.origin()) == ("off", "profile work")
+
+
 def test_home_profile_requires_heavy_reasoning() -> None:
     config = load_config({"JARVIS_PROFILE": "home"})
     report = resolve(Available.from_config(config, hardware()), config.capabilities)
