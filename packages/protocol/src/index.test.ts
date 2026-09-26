@@ -4,7 +4,9 @@ import schema from "../protocol.schema.json" with { type: "json" };
 import {
   asError,
   asHello,
+  ENVELOPE_KEYS,
   envelope,
+  isMessageType,
   MESSAGE_TYPES,
   parseEnvelope,
   PROTOCOL_VERSION,
@@ -42,6 +44,16 @@ describe("protocol.schema.json", () => {
       rule.then.properties.payload.$ref,
     ]);
     expect(routed).toEqual(MESSAGE_TYPES.map((t) => [t, `#/$defs/${t}`]));
+  });
+});
+
+describe("isMessageType", () => {
+  it.each(MESSAGE_TYPES)("accepts %s", (type) => {
+    expect(isMessageType(type)).toBe(true);
+  });
+
+  it.each(["nope", "", "Ping", "hello "])("rejects %j", (type) => {
+    expect(isMessageType(type)).toBe(false);
   });
 });
 
@@ -84,6 +96,27 @@ describe("parseEnvelope", () => {
   ])("rejects a bad %s", (key, value) => {
     const raw = { v: 0, type: "ping", id: null, payload: {}, [key]: value };
     expect(parseEnvelope(JSON.stringify(raw))).toBeNull();
+  });
+
+  it("knows exactly the schema's envelope properties", () => {
+    expect(schema.additionalProperties).toBe(false);
+    expect([...ENVELOPE_KEYS].sort()).toEqual(
+      Object.keys(schema.properties).sort(),
+    );
+  });
+
+  it("rejects an unknown top-level key but not an unknown payload field", () => {
+    const extra = { v: 0, type: "ping", extra: true };
+    expect(parseEnvelope(JSON.stringify(extra))).toBeNull();
+    const open = { v: 0, type: "ping", payload: { extra: true } };
+    expect(parseEnvelope(JSON.stringify(open))?.payload).toEqual({
+      extra: true,
+    });
+  });
+
+  it("only shape-checks a frame of another version", () => {
+    const future = { v: 1, type: "hello", payload: {}, extra: true };
+    expect(parseEnvelope(JSON.stringify(future))?.v).toBe(1);
   });
 
   it("defaults the optional properties like the schema", () => {
