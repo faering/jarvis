@@ -27,6 +27,9 @@ export function isMessageType(type: string): type is MessageType {
   return (MESSAGE_TYPES as readonly string[]).includes(type);
 }
 
+/** The envelope's properties; the schema allows no others (payload stays open). */
+export const ENVELOPE_KEYS = ["v", "type", "id", "payload"] as const;
+
 export interface Envelope {
   v: number;
   type: string;
@@ -57,7 +60,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Parse one text frame; returns null for anything that is not an envelope. */
+/**
+ * Parse one text frame; returns null for anything that is not an envelope.
+ *
+ * A current-version frame with an unknown top-level key is rejected, as the agent does.
+ * A frame of another version is only shape-checked, so a hello from an incompatible agent
+ * still gets through and can be reported as such.
+ */
 export function parseEnvelope(raw: string): Envelope | null {
   let data: unknown;
   try {
@@ -76,6 +85,13 @@ export function parseEnvelope(raw: string): Envelope | null {
     return null;
   }
   if ((id !== null && typeof id !== "string") || !isRecord(payload)) {
+    return null;
+  }
+  const known: readonly string[] = ENVELOPE_KEYS;
+  if (
+    v === PROTOCOL_VERSION &&
+    Object.keys(data).some((k) => !known.includes(k))
+  ) {
     return null;
   }
   return { v, type, id, payload };
