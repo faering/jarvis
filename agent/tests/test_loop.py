@@ -4,13 +4,14 @@ Fakes are gated by events instead of sleeps; timeouts only guard against hangs.
 """
 
 import asyncio
+import sqlite3
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import pytest
 
-from jarvis_agent.backends import LLM, BackendError, ChatMessage
+from jarvis_agent.backends import LLM, TTS, BackendError, ChatMessage
 from jarvis_agent.backends.mock import MockSTT
 from jarvis_agent.loop import (
     Cancel,
@@ -28,7 +29,8 @@ from jarvis_agent.loop import (
 from jarvis_agent.loop.voice import BUSY, DEFAULT_SYSTEM_PROMPT, SORRY, _fit
 from jarvis_agent.routing import ComputeLayer, Provider, Reply, Router, Task
 from jarvis_agent.speech import SpeechQueue
-from jarvis_agent.store import State, StoreSettings, open_state
+from jarvis_agent.store import ConversationMemory, State, StoreSettings, Turn, open_state
+from jarvis_agent.store.base import Role
 
 pytestmark = pytest.mark.anyio
 
@@ -113,6 +115,34 @@ class TextTTS:
         return text.encode()
 
 
+class FailingTTS:
+    async def synthesize(self, text: str) -> bytes:
+        raise BackendError("tts", "HTTP 503", status_code=503)
+
+
+class BrokenReplyMemory:
+    """Conversation memory whose assistant turns fail inside ``SqliteStore.run`` with a raw
+    ``sqlite3.OperationalError`` (as a full disk would); user turns are stored."""
+
+    def __init__(self, state: State) -> None:
+        self.state = state
+
+    async def append(self, role: Role, content: str) -> Turn:
+        if role == "assistant":
+
+            def fail(conn: sqlite3.Connection) -> None:
+                raise sqlite3.OperationalError("database or disk is full")
+
+            await self.state.db.run(fail)
+        return await self.state.memory.append(role, content)
+
+    async def recent(self, limit: int = 20) -> list[Turn]:
+        return await self.state.memory.recent(limit)
+
+    async def clear(self) -> None:
+        await self.state.memory.clear()
+
+
 class Sink:
     """Records playback. With ``hold=True`` each play waits until ``stop()``."""
 
@@ -176,6 +206,7 @@ class Harness:
     router: Router
     state: State
     sink: Sink
+    speech: SpeechQueue
     handles: list[asyncio.Task[Reply]]
 
     async def memory(self) -> list[tuple[str, str]]:
@@ -192,6 +223,8 @@ async def running(
     max_turns: int = 16,
     max_offloads: int = 4,
     max_pending: int = 64,
+    tts: TTS | None = None,
+    memory: Callable[[State], ConversationMemory] | None = None,
 ) -> AsyncIterator[Harness]:
     state = await open_state(StoreSettings(db=":memory:"))
     router = Router(
@@ -209,14 +242,15 @@ async def running(
 
     router.offload = spy  # type: ignore[method-assign]
     sink = sink or Sink()
-    speech = SpeechQueue(TextTTS(), sink, max_turns=max_turns, max_pending=max_pending)
+    speech = SpeechQueue(tts or TextTTS(), sink, max_turns=max_turns, max_pending=max_pending)
     speech.start()
-    loop = VoiceLoop(router, speech, stt or MockSTT(), state.memory, max_offloads=max_offloads)
+    conversation = memory(state) if memory else state.memory
+    loop = VoiceLoop(router, speech, stt or MockSTT(), conversation, max_offloads=max_offloads)
     events = Recorder()
     loop.subscribe(events)
     loop.start()
     try:
-        yield Harness(loop, events, router, state, sink, handles)
+        yield Harness(loop, events, router, state, sink, speech, handles)
     finally:
         await loop.aclose()
         await router.aclose()
@@ -440,6 +474,43 @@ async def test_partial_reply_is_remembered_when_the_stream_fails() -> None:
         assert h.events.replies == [ReplyText(text="First part. ", done=True)]
         assert h.sink.played == [b"First part."]
         assert await h.memory() == [("user", "hi"), ("assistant", "First part. ")]
+
+
+async def test_hot_reply_that_cannot_be_stored_still_completes_once() -> None:
+    async with running(ScriptLLM(["Hello."]), memory=BrokenReplyMemory) as h:
+        h.loop.say("hi")
+        await h.events.until_idle_after(1)
+        h.loop.say("again")  # the loop is still responsive
+        await h.events.until_idle_after(2)
+
+        # One done frame per turn (no extra SORRY), and memory is best-effort.
+        assert h.events.replies == [ReplyText(text="Hello.", done=True)] * 2
+        assert await h.memory() == [("user", "hi"), ("user", "again")]
+
+
+async def test_offloaded_reply_that_cannot_be_stored_still_completes() -> None:
+    heavy = GatedLLM()
+    async with running(ScriptLLM(), heavy, memory=BrokenReplyMemory) as h:
+        h.loop.say("plan my week", deep=True)
+        await h.events.until(lambda: h.events.states[-1:] == [IDLE])
+        heavy.gate.set()
+        await h.events.until_idle_after(1)
+
+        assert h.events.replies == [ReplyText(text="heavy answer", done=True)]
+        assert h.events.states[-2:] == [SPEAKING, IDLE]
+
+
+async def test_reply_whose_speech_already_failed_is_not_claimed_spoken() -> None:
+    llm = ScriptLLM(["One. ", "Two."], gates={"Two."})
+    async with running(llm, tts=FailingTTS()) as h:
+        h.loop.say("count")
+        async with asyncio.timeout(2.0):  # "One." failed in TTS while "Two." is held
+            while not h.speech.failed:
+                await asyncio.sleep(0)
+        llm.release("Two.")
+        await h.events.until_idle_after(1)
+
+        assert h.events.replies == [ReplyText(text="One. Two.", done=True, spoken=False)]
 
 
 async def test_only_the_actor_changes_the_state() -> None:
