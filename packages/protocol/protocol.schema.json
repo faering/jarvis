@@ -271,7 +271,7 @@
       ]
     },
     "reply": {
-      "description": "agent -> app: reply text. While streaming: {delta, done: false}; then one {text, done: true}. degraded: the heavy route failed and the local model answered. spoken: false when the reply was shown but not queued for speech (absent = spoken).",
+      "description": "agent -> app: reply text. While streaming: {delta, done: false}; then one {text, done: true}. degraded: the heavy route failed and the local model answered. spoken: false when the reply was refused by the speech queue, had chunks dropped, or its synthesis/playback had already failed when the reply completed (absent = accepted for speech; later failures are only logged).",
       "type": "object",
       "properties": {
         "delta": {
