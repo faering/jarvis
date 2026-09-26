@@ -113,7 +113,11 @@ class SqliteStore:
         return await asyncio.to_thread(cls, path)
 
     async def run[T](self, work: Callable[[sqlite3.Connection], T]) -> T:
-        """Run ``work`` with the connection, in a worker thread, as one transaction."""
+        """Run ``work`` with the connection, in a worker thread, as one transaction.
+
+        Any ``sqlite3.Error`` (from ``work``, BEGIN or COMMIT, e.g. disk full) is rolled back
+        and raised as ``StoreError`` (the original is its ``__cause__``), so callers need to
+        handle only the store's own error type."""
         return await asyncio.to_thread(self._run_locked, work)
 
     async def snapshot(self, dest: str | Path) -> Path:
@@ -145,12 +149,17 @@ class SqliteStore:
 
     def _run_locked[T](self, work: Callable[[sqlite3.Connection], T]) -> T:
         def in_transaction(conn: sqlite3.Connection) -> T:
-            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+            except sqlite3.Error as exc:  # e.g. locked, or I/O error
+                raise StoreError(f"state store {self.path!r}: {exc}") from exc
             try:
                 result = work(conn)
                 conn.execute("COMMIT")  # can fail too (disk full, deferred constraint)
-            except BaseException:
+            except BaseException as exc:
                 _rollback(conn)
+                if isinstance(exc, sqlite3.Error):
+                    raise StoreError(f"state store {self.path!r}: {exc}") from exc
                 raise
             return result
 
