@@ -461,14 +461,29 @@ async def test_failed_commit_rolls_back() -> None:
         conn.execute("INSERT INTO kv (key, value, updated_at) VALUES ('k', '1', 'now')")
         conn.execute("INSERT INTO child VALUES (42)")
 
-    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+    with pytest.raises(StoreError, match="FOREIGN KEY") as caught:
         await db.run(fails_at_commit)
+    assert isinstance(caught.value.__cause__, sqlite3.IntegrityError)
 
     def check(conn: sqlite3.Connection) -> tuple[int, int]:
         tables = conn.execute("SELECT count(*) FROM sqlite_master WHERE name = 'child'")
         return tables.fetchone()[0], conn.execute("SELECT count(*) FROM kv").fetchone()[0]
 
     assert await db.run(check) == (0, 0)  # rolled back, and the store is usable again
+    await db.aclose()
+
+
+@pytest.mark.anyio
+async def test_sqlite_errors_become_store_errors() -> None:
+    db = await SqliteStore.open(":memory:")
+
+    def bad_sql(conn: sqlite3.Connection) -> None:
+        conn.execute("INSERT INTO no_such_table VALUES (1)")
+
+    with pytest.raises(StoreError, match="no_such_table") as caught:
+        await db.run(bad_sql)
+    assert isinstance(caught.value.__cause__, sqlite3.OperationalError)
+    assert await db.schema_version() == SCHEMA_VERSION  # rolled back, still usable
     await db.aclose()
 
 
