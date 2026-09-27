@@ -13,6 +13,7 @@ To change one, add a new ADR that supersedes it and update the old one's status.
 | [0006](0006-release-artifacts-and-pi-deploy.md) | Release artifacts + CI/compatibility-gated per-component Pi deploy | Accepted |
 | [0007](0007-layered-config-and-capabilities.md) | Layered config + profiles, probed hardware, capability manifests | Accepted |
 | [0008](0008-protocol-json-schema.md) | One JSON Schema is the agent↔app WebSocket contract | Accepted |
+| [0009](0009-least-privilege-deploy.md) | Least-privilege deploys: no docker group, root actions via two audited scripts | Accepted |
 
 Template:
 
