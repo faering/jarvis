@@ -78,6 +78,34 @@ The text is always the OTel name (`WARN`, `FATAL`), never `WARNING` or `CRITICAL
 - **Never logged:** secrets, tokens, API keys, auth headers, user audio. User text (what
   you said, what Jarvis replied) appears only at TRACE.
 
+## Agent configuration
+
+The `[logging]` section of the agent config ([ADR 0007](adr/0007-layered-config-and-capabilities.md)); env
+wins over the file, and an empty env var counts as unset.
+
+| Key | Env | Default | Meaning |
+|-----|-----|---------|---------|
+| `dir` | `JARVIS_LOG_DIR` | unset | Log folder (`/var/log/jarvis` on the Pi). Unset: stderr only |
+| `level` | `JARVIS_LOG_LEVEL` | `INFO` (`DEBUG` in the `dev` profile) | Root level; OTel or Python names |
+| `levels` | | `{}` | Level per logger, by the name in the line |
+| `daily_cap_mb` | | `500` | Per-day file cap in MiB |
+
+```toml
+[logging]
+level = "INFO"
+
+[logging.levels]
+"loop.voice" = "DEBUG"   # the logger slot as it appears in the line
+"uvicorn.access" = "INFO" # default WARN, so the health check stays out
+```
+
+- **In code:** `log = logging.getLogger(__name__)`; attributes via
+  `log.info("transcribed", extra=kv(duration_ms=312))` (`from jarvis_agent.logs import kv`);
+  TRACE via `log.log(TRACE, ...)`. Each voice turn and `say` request runs under a trace id;
+  its frames carry `trace_id`.
+- **Dev:** `JARVIS_LOG_DIR=logs uv run python -m jarvis_agent` (from `agent/`) writes
+  `agent/logs/jarvis-agent-YYYY-MM-DD.log` (git-ignored).
+
 ## Files and budget
 
 - **Where:** `/var/log/jarvis/jarvis-<component>-YYYY-MM-DD.log` on the Pi, one file per
