@@ -1,0 +1,431 @@
+#!/usr/bin/python3
+"""Read, prune and size the Jarvis log files (docs/logging.md). Python 3 stdlib only.
+
+  jarvis-logs [--since 1h] [--turn ID] [--level WARN] [--component agent] [-n N] [-f]
+  jarvis-logs prune [--max-age-days 90] [--budget 20G] [--dry-run]
+  jarvis-logs usage [--budget 20G] [--daily-cap 500M] [--days N]
+
+Reads every jarvis-<component>-YYYY-MM-DD.log in --dir (default $JARVIS_LOG_DIR, else
+/var/log/jarvis) and merges them into one timeline; continuation lines stay with their
+record. The Pi setup installs it as /usr/local/bin/jarvis-logs; an hourly systemd timer
+runs `jarvis-logs prune`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import heapq
+import os
+import re
+import stat
+import sys
+import time
+from collections import defaultdict, deque
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+
+DEFAULT_DIR = "/var/log/jarvis"
+MAX_AGE_DAYS = 90
+BUDGET = 20 * 1024**3
+DAILY_CAP = 500 * 1024**2
+LEVELS = ("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL")
+
+FILE_RE = re.compile(r"^jarvis-([a-z0-9][a-z0-9_.-]*)-(\d{4}-\d{2}-\d{2})\.log$")
+LINE_RE = re.compile(
+    r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z)\] "
+    r"\[(TRACE|DEBUG|INFO |WARN |ERROR|FATAL)\] "
+    r"\[([^\]]*)\] \[([^\]]*)\] \[([0-9a-f]{8}|-{8})\] ?(.*)$"
+)
+_VALUE = r'(?:"(?:[^"\\]|\\.)*"|[^\s"]*)'
+ATTR_RE = re.compile(r'([^\s="]+)=(' + _VALUE + r")")
+ATTRS_RE = re.compile(r'^[^\s="]+=' + _VALUE + r'(?: [^\s="]+=' + _VALUE + r")*$")
+UNESCAPE = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\"}
+
+
+@dataclass
+class Record:
+    ts: str  # "2026-09-27 15:44:38.123Z" (sorts as text); "" for an unparseable orphan line
+    level: str | None
+    component: str
+    logger: str
+    turn: str
+    message: str
+    attrs: dict[str, str] = field(default_factory=dict)
+    lines: list[str] = field(default_factory=list)  # raw lines, continuation lines included
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.lines)
+
+
+# ---- parsing ---------------------------------------------------------------------------------
+def _unescape(s: str) -> str:
+    return re.sub(r"\\(.)", lambda m: UNESCAPE.get(m.group(1), "\\" + m.group(1)), s)
+
+
+def split_body(body: str) -> tuple[str, dict[str, str]]:
+    """Split '<message>  k=v k="v v"' into the message and its attributes."""
+    i = body.find("  ")
+    while i != -1:
+        tail = body[i + 2 :]
+        if ATTRS_RE.match(tail):
+            attrs = {}
+            for k, v in ATTR_RE.findall(tail):
+                attrs[k] = _unescape(v[1:-1]) if v.startswith('"') else v
+            return body[:i], attrs
+        i = body.find("  ", i + 1)
+    return body, {}
+
+
+def parse_line(line: str) -> Record | None:
+    m = LINE_RE.match(line)
+    if not m:
+        return None
+    ts, level, comp, logger, turn, body = m.groups()
+    msg, attrs = split_body(body)
+    return Record(ts, level.strip(), comp, logger, turn, msg.replace("\\n", "\n"), attrs, [line])
+
+
+def parse(lines: Iterable[str]) -> Iterator[Record]:
+    """Yield records from lines; a line that doesn't start a record belongs to the one above."""
+    cur: Record | None = None
+    for raw in lines:
+        line = raw.rstrip("\n")
+        rec = parse_line(line) if line.startswith("[") else None
+        if rec is None and cur is not None:
+            cur.lines.append(line)
+            continue
+        if cur is not None:
+            yield cur
+        cur = rec or Record("", None, "", "", "", line, lines=[line])
+    if cur is not None:
+        yield cur
+
+
+# ---- files -----------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class LogFile:
+    path: Path
+    component: str
+    day: dt.date
+    size: int
+
+
+def log_files(folder: Path) -> list[LogFile]:
+    """Regular files named jarvis-<component>-YYYY-MM-DD.log; anything else is ignored."""
+    out = []
+    try:
+        entries = list(os.scandir(folder))
+    except FileNotFoundError:
+        return []
+    for e in entries:
+        m = FILE_RE.match(e.name)
+        if not m:
+            continue
+        try:
+            day = dt.date.fromisoformat(m.group(2))
+            st = e.stat(follow_symlinks=False)
+        except (ValueError, OSError):
+            continue
+        if stat.S_ISREG(st.st_mode):
+            out.append(LogFile(Path(e.path), m.group(1), day, st.st_size))
+    return sorted(out, key=lambda f: (f.day, f.component, f.path.name))
+
+
+def read_records(f: LogFile) -> Iterator[Record]:
+    """The file's records, read up to the size it had when listed (Follower takes over there)."""
+    try:
+        with open(f.path, "rb") as fh:
+            data = fh.read(f.size)
+    except OSError:
+        return
+    yield from parse(data.decode("utf-8", errors="replace").splitlines())
+
+
+# ---- filters ---------------------------------------------------------------------------------
+def fmt_ts(t: dt.datetime) -> str:
+    return t.astimezone(dt.UTC).strftime("%Y-%m-%d %H:%M:%S.") + f"{t.microsecond // 1000:03d}Z"
+
+
+def parse_since(value: str, now: dt.datetime) -> dt.datetime:
+    m = re.fullmatch(r"(\d+)([smhd])", value.strip())
+    if m:
+        unit = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}[m.group(2)]
+        return now - dt.timedelta(**{unit: int(m.group(1))})
+    try:
+        t = dt.datetime.fromisoformat(value.strip())
+    except ValueError:
+        msg = f"--since: '{value}' is not 30m, 1h, 2d or an ISO time"
+        raise argparse.ArgumentTypeError(msg) from None
+    return t if t.tzinfo else t.replace(tzinfo=dt.UTC)
+
+
+@dataclass
+class Filter:
+    turn: str | None = None
+    min_level: str | None = None
+    components: list[str] | None = None
+    since: str | None = None  # formatted like Record.ts
+
+    def file_ok(self, f: LogFile) -> bool:
+        if self.components and f.component not in self.components:
+            return False
+        return not (self.since and f.day.isoformat() < self.since[:10])
+
+    def __call__(self, r: Record) -> bool:
+        if self.turn and r.turn != self.turn:
+            return False
+        if self.min_level and (
+            r.level is None or LEVELS.index(r.level) < LEVELS.index(self.min_level)
+        ):
+            return False
+        if self.components and r.component not in self.components:
+            return False
+        return not (self.since and r.ts < self.since)
+
+
+def merged(files: list[LogFile], flt: Filter) -> Iterator[Record]:
+    """All matching records in timestamp order: day by day, a k-way merge of that day's files."""
+    by_day = defaultdict(list)
+    for f in files:
+        if flt.file_ok(f):
+            by_day[f.day].append(f)
+    for day in sorted(by_day):
+        streams = [read_records(f) for f in by_day[day]]
+        for rec in heapq.merge(*streams, key=lambda r: r.ts):
+            if flt(rec):
+                yield rec
+
+
+class Follower:
+    """Tails every log file in a folder (new ones too) and returns complete new records."""
+
+    def __init__(self, folder: Path, flt: Filter, start: list[LogFile] = ()):
+        """start: files already read up to their listed size; new files are read from 0."""
+        self.folder, self.flt = folder, flt
+        self.offsets: dict[Path, int] = {f.path: f.size for f in start}
+        self.partial: dict[Path, str] = {}
+
+    def poll(self) -> list[Record]:
+        new: list[Record] = []
+        for f in log_files(self.folder):
+            if not self.flt.file_ok(f):
+                continue
+            off = self.offsets.get(f.path, 0)
+            if f.size < off:  # truncated or replaced: start over
+                off, self.partial[f.path] = 0, ""
+            if f.size == off:
+                continue
+            try:
+                with open(f.path, "rb") as fh:
+                    fh.seek(off)
+                    data = fh.read()
+            except OSError:
+                continue
+            self.offsets[f.path] = off + len(data)
+            text = self.partial.get(f.path, "") + data.decode("utf-8", errors="replace")
+            *complete, self.partial[f.path] = text.split("\n")
+            new.extend(r for r in parse(complete) if self.flt(r))
+        return sorted(new, key=lambda r: r.ts)
+
+
+# ---- sizes -----------------------------------------------------------------------------------
+def parse_size(value: str) -> int:
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([KMGT]?)(?:i?B)?", value.strip(), re.IGNORECASE)
+    if not m:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a size like 500M or 20G")
+    return int(float(m.group(1)) * 1024 ** "_KMGT".index(m.group(2).upper() or "_"))
+
+
+def human(n: float) -> str:
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if n < 1024 or unit == "GiB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GiB"
+
+
+# ---- prune -----------------------------------------------------------------------------------
+def prune(
+    folder: Path, max_age_days: int, budget: int, today: dt.date, dry_run: bool, out=None
+) -> tuple[list[Path], int]:
+    """Delete log files older than max_age_days (UTC days, today = age 0), then the oldest files
+    until the folder is under budget. Today's files are kept: writers hold them open, so
+    deleting them frees nothing. Returns (deleted paths, number of failed deletes)."""
+    out = out or sys.stdout
+    files = log_files(folder)
+    deleted: list[Path] = []
+    failed = 0
+    verb = "would delete" if dry_run else "deleted"
+
+    def drop(f: LogFile, why: str) -> None:
+        nonlocal failed
+        if not dry_run:
+            try:
+                os.unlink(f.path)
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                failed += 1
+                print(f"could not delete {f.path.name}: {e.strerror}", file=sys.stderr)
+                return
+        deleted.append(f.path)
+        print(f"{verb} {f.path.name} ({human(f.size)}, {why})", file=out)
+
+    keep = []
+    for f in files:
+        if (today - f.day).days >= max_age_days:
+            drop(f, f"older than {max_age_days} days")
+        else:
+            keep.append(f)
+    total = sum(f.size for f in keep)
+    for f in keep:  # oldest first
+        if total <= budget:
+            break
+        if f.day >= today:
+            print(f"still over budget ({human(total)}) with only today's files left", file=out)
+            break
+        drop(f, "over budget")
+        total -= f.size
+    print(f"{verb} {len(deleted)} file(s); folder {human(total)} of {human(budget)}", file=out)
+    return deleted, failed
+
+
+# ---- usage -----------------------------------------------------------------------------------
+def usage_report(folder: Path, budget: int, daily_cap: int, days: int | None) -> str:
+    files = log_files(folder)
+    comps = sorted({f.component for f in files})
+    daily: dict[dt.date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    monthly: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for f in files:
+        daily[f.day][f.component] += f.size
+        monthly[f.day.strftime("%Y-%m")][f.component] += f.size
+    total = sum(f.size for f in files)
+    pct = 100 * total / budget if budget else 0
+    lines = [f"{folder}: {human(total)} of {human(budget)} budget ({pct:.1f}%)", ""]
+    if not files:
+        return "\n".join(lines + ["no log files"])
+
+    def table(title, first, rows, extra=None):
+        head = [first, *comps, "total"] + ([extra[0]] if extra else [])
+        body = []
+        for key, sizes in rows:
+            row = [key, *(human(sizes.get(c, 0)) for c in comps), human(sum(sizes.values()))]
+            if extra:
+                row.append(extra[1](sizes))
+            body.append(row)
+        widths = [max(len(r[i]) for r in [head, *body]) for i in range(len(head))]
+
+        def fmt(r):
+            cells = zip(r, widths, strict=True)
+            return "  ".join(c.ljust(w) if i == 0 else c.rjust(w) for i, (c, w) in enumerate(cells))
+
+        return [title, fmt(head), *map(fmt, body), ""]
+
+    day_keys = sorted(daily)[-days:] if days else sorted(daily)
+
+    def peak(sizes):
+        return f"{100 * max(sizes.values()) / daily_cap:.0f}%" if daily_cap else "-"
+
+    lines += table(
+        f"Per day (cap {human(daily_cap)} per component):",
+        "day",
+        [(d.isoformat(), daily[d]) for d in day_keys],
+        ("peak % of cap", peak),
+    )
+    lines += table("Per month:", "month", [(m, monthly[m]) for m in sorted(monthly)])
+    return "\n".join(lines).rstrip("\n")
+
+
+# ---- CLI -------------------------------------------------------------------------------------
+def turn_arg(value: str) -> str:
+    v = value.lower()
+    if not re.fullmatch(r"[0-9a-f]{8}|[0-9a-f]{32}", v):
+        raise argparse.ArgumentTypeError("--turn takes 8 or 32 hex characters")
+    return v[:8]
+
+
+def level_arg(value: str) -> str:
+    v = value.upper()
+    if v not in LEVELS:
+        raise argparse.ArgumentTypeError(f"--level must be one of {', '.join(LEVELS)}")
+    return v
+
+
+def build_parser() -> argparse.ArgumentParser:
+    default_dir = os.environ.get("JARVIS_LOG_DIR") or DEFAULT_DIR
+    p = argparse.ArgumentParser(
+        prog="jarvis-logs",
+        description="Merge, filter, follow, prune and size the Jarvis log files.",
+    )
+    p.add_argument(
+        "--dir", type=Path, default=Path(default_dir), help=f"log folder (default {default_dir})"
+    )
+    p.add_argument("--turn", type=turn_arg, help="one turn: its 8-char id or full 32-hex trace id")
+    p.add_argument("--level", type=level_arg, help="minimum level (TRACE..FATAL)")
+    p.add_argument("--component", action="append", help="only this component (repeatable)")
+    p.add_argument("--since", help="30m, 1h, 2d, or an ISO time (UTC unless it has an offset)")
+    p.add_argument("-n", "--lines", type=int, help="only the last N records (default 10 with -f)")
+    p.add_argument("-f", "--follow", action="store_true", help="keep printing new records")
+    sub = p.add_subparsers(dest="cmd")
+    pr = sub.add_parser("prune", help="delete old files, then the oldest until under budget")
+    pr.add_argument("--dir", type=Path, default=argparse.SUPPRESS)
+    pr.add_argument("--max-age-days", type=int, default=MAX_AGE_DAYS)
+    pr.add_argument("--budget", type=parse_size, default=BUDGET, help="folder budget (default 20G)")
+    pr.add_argument("--dry-run", action="store_true", help="only print what would be deleted")
+    us = sub.add_parser("usage", help="size per component per day and month, vs budget")
+    us.add_argument("--dir", type=Path, default=argparse.SUPPRESS)
+    us.add_argument("--budget", type=parse_size, default=BUDGET)
+    us.add_argument("--daily-cap", type=parse_size, default=DAILY_CAP)
+    us.add_argument("--days", type=int, help="only the last N days in the per-day table")
+    return p
+
+
+def main(argv=None, now: dt.datetime | None = None, out=None) -> int:
+    out = out or sys.stdout
+    args = build_parser().parse_args(argv)
+    now = now or dt.datetime.now(dt.UTC)
+    if args.cmd == "prune":
+        _, failed = prune(args.dir, args.max_age_days, args.budget, now.date(), args.dry_run, out)
+        return 1 if failed else 0
+    if args.cmd == "usage":
+        print(usage_report(args.dir, args.budget, args.daily_cap, args.days), file=out)
+        return 0
+
+    try:
+        since = fmt_ts(parse_since(args.since, now)) if args.since else None
+    except argparse.ArgumentTypeError as e:
+        build_parser().error(str(e))
+    flt = Filter(args.turn, args.level, args.component, since)
+    if args.follow and not since:
+        flt_backlog = Filter(args.turn, args.level, args.component, now.date().isoformat())
+    else:
+        flt_backlog = flt
+    n = args.lines if args.lines is not None else (10 if args.follow else None)
+    files = log_files(args.dir)
+    records = merged(files, flt_backlog)
+    if n is not None:
+        records = deque(records, maxlen=n) if n > 0 else []
+    for r in records:
+        print(r.text, file=out)
+    if not args.follow:
+        return 0
+    follower = Follower(args.dir, flt, start=files)
+    out.flush()
+    while True:
+        time.sleep(0.5)
+        for r in follower.poll():
+            print(r.text, file=out)
+        out.flush()
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except BrokenPipeError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)

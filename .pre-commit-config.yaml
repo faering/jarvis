@@ -115,7 +115,7 @@ repos:
         name: remote deploy script tests
         language: system
         entry: scripts/deploy/test_remote_deploy.sh
-        files: ^scripts/deploy/(remote-agent|remote-app|remote-state|test_remote_deploy)\.sh$
+        files: ^scripts/(deploy/(remote-app\.sh|remote-state\.sh|test_remote_deploy\.sh|jarvis-deploy-agent|jarvis-install-app)|lib/log\.sh|logs/jarvis-logs)$
         pass_filenames: false
         stages: [pre-push]
 
@@ -123,6 +123,14 @@ repos:
         name: Pi setup script tests
         language: system
         entry: scripts/pi/test_setup.sh
-        files: ^(scripts/pi/|scripts/deploy/jarvis-install-app$|deploy/pi/docker-compose\.yml$)
+        files: ^(scripts/pi/|scripts/deploy/jarvis-install-app$|scripts/lib/log\.sh$|scripts/logs/jarvis-logs$|deploy/pi/docker-compose\.yml$)
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: jarvis-logs-test
+        name: jarvis-logs + bash logger tests
+        language: system
+        entry: python3 -m unittest discover -s scripts/logs
+        files: ^(scripts/logs/|scripts/lib/log\.sh$|docs/logging-examples\.log$)
         pass_filenames: false
         stages: [pre-push]
