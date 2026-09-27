@@ -13,7 +13,8 @@ rolled out can run next to the **other component's currently deployed release**.
 5. Both speak the same WebSocket `PROTOCOL_VERSION` → OK; otherwise refused.
 
 Each release's protocol version is read from its source at the tag and recorded in the
-release's `manifest.json` asset; the Pi records what it runs in `~/jarvis/state/*.env`.
+release's `manifest.json` asset; the Pi records what it runs (agent:
+`/var/lib/jarvis/agent.env`, app: `~/jarvis/state/app.env`).
 
 ## Maintaining `compatibility.json`
 - **`known_good`**: add `{ "agent": "X.Y.Z", "app": "A.B.C" }` once a pair is verified on

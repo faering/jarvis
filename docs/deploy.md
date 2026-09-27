@@ -57,6 +57,16 @@ flowchart LR
 - **Enable it:** follow the [Pi first-time setup](pi-setup.md) (Tailscale,
   deploy key, the `pi` environment and its secrets, then `PI_DEPLOY_ENABLED=true`).
 - **Pi prerequisites:** Pi OS Trixie or newer (64-bit; the `.deb` is built on Ubuntu 24.04),
-  Docker with Compose v2, reachable over SSH from GitHub runners, passwordless sudo for
-  `/usr/local/sbin/jarvis-install-app` only (the app installer; see the setup guide), and a public GHCR package (or `docker login ghcr.io`).
-  Runtime config goes in `~/jarvis/.env`; deploy state lives in `~/jarvis/state/`.
+  Docker with Compose v2, reachable over SSH from GitHub runners, and a public GHCR package
+  (or `sudo docker login ghcr.io`: root pulls the image).
+
+### Privilege model ([ADR 0009](adr/0009-least-privilege-deploy.md))
+- The SSH key logs in as `deploy`, which is **not** in the `docker` group (that is
+  root-equivalent). Its only root access is two root-owned scripts, via sudoers:
+  `/usr/local/sbin/jarvis-deploy-agent` and `/usr/local/sbin/jarvis-install-app`.
+- `jarvis-deploy-agent deploy <tag> <version> <protocol>` accepts only a `DOCKER_TAG` of
+  `ghcr.io/faering/jarvis-agent` and runs the root-owned `/opt/jarvis/docker-compose.yml`
+  (from `deploy/pi/`); deploys never upload a compose file. `… state` prints the agent state.
+- Root-owned on the Pi: runtime config `/opt/jarvis/agent.env` (600), agent state
+  `/var/lib/jarvis/agent.env`. The app's state and `.deb`s stay in `~deploy/jarvis/`.
+- The root scripts and compose file change only when an admin re-runs the Pi setup.
