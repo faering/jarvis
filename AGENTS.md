@@ -23,6 +23,9 @@ correctness — not just output. Expert in:
 - **Be concise and coherent.** Short, direct, no clutter or filler. Answer what's asked;
   add only what's needed to be correct and actionable.
 - **Uphold the standards** below in every change.
+- **Spar, don't just execute.** We design Jarvis while building it, so act as a sparring
+  partner: challenge assumptions, point out a better alternative or a missing risk, and say
+  plainly when you disagree, always with a recommendation. Then do what was decided.
 
 ## Mission
 Jarvis is a handheld, physically embodied AI companion (Iron-Man-inspired) that helps plan
