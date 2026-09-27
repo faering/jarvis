@@ -56,6 +56,8 @@ Every work item has:
 - **status** — one of the statuses above.
 - **parent** — parent issue number, or `null` for a top-level Epic.
 - **iteration** — sprint/iteration name, or `null`.
+- **milestone** — the outcome milestone it delivers (native GitHub milestone), or `null`
+  for epics that span several (see the `roadmap` skill).
 - **labels** — the resolved `type:*`/`prio:*`/`status:*` set plus any extras.
 - **architecture decisions touched** — which CLAUDE.md decisions this item affects
   (language boundaries, compute-layer routing, Docker/Tauri split, CI/CD). Required so
@@ -135,6 +137,7 @@ Envelope:
   "status": "backlog",                  // backlog|ready|in-progress|review|done
   "parent": null,                       // parent's localId or GitHub number
   "iteration": null,
+  "milestone": null,                    // outcome milestone title, or null (epics spanning several)
   "startDate": null,                    // YYYY-MM-DD, Project "Start date" (roadmap skill)
   "targetDate": null,                   // YYYY-MM-DD, Project "Target date"; actual date once closed
   "labels": ["type:epic", "prio:P1", "status:backlog"],

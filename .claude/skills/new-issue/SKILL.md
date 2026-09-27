@@ -9,14 +9,15 @@ Creates a schema-compliant work item. MCP-first. Shape: `_shared/issue-schema.md
 
 ## Gather (ask if any are missing or ambiguous)
 - `title`, `type` (epic/feature/story/task/bug), `summary`, acceptance criteria,
-  `priority` (P0–P3), `parent` (issue #), architecture decisions touched.
+  `priority` (P0–P3), `parent` (issue #), architecture decisions touched, `milestone`
+  (propose the fitting open one; see the `roadmap` skill).
 
 ## Steps
 1. **De-dupe** — `search_issues` for an existing match first.
 2. Ensure the `type:*` / `prio:*` / `status:*` labels exist (`gh label create` if missing).
 3. `issue_write create` with `title`, the schema-rendered `body` (Summary / Acceptance
-   criteria / Architecture decisions touched / Meta), `labels`, and `parent_issue_number`
-   for the sub-issue link. Pass title and body as **raw text** (`&`, `->`), never
+   criteria / Architecture decisions touched / Meta), `labels`, `milestone` (number), and
+   `parent_issue_number` for the sub-issue link. Pass title and body as **raw text** (`&`, `->`), never
    HTML-escaped; then re-read the stored title and run it through
    `python3 .claude/skills/_shared/wi_text.py check` (schema *Text encoding* section).
 4. `board-sync` the new issue (add to Project #3 + set Status / Item Type / Priority).
