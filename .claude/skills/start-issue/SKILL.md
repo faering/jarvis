@@ -25,6 +25,8 @@ GitHub MCP** (`mcp__github__*`), not `gh` (see [[reference-github-token-split]] 
    git checkout main && git pull --ff-only origin main
    git checkout -b <branch>
    ```
+   Then tidy up merged work: `python3 .claude/skills/prune-branches/prune_branches.py --apply`
+   (the `prune-branches` skill; deletes only branches of merged PRs).
    (Push auth uses the local credential helper: `git config --local
    credential.https://github.com.helper '!gh auth git-credential'`.)
 4. **Move the board card to In Progress** — `projects_write update_project_item`
