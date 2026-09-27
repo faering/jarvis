@@ -14,6 +14,7 @@ from jarvis_agent.capabilities.builtin import BUILTIN
 from jarvis_agent.capabilities.manifest import Kind, Manifest, ProviderSpec
 from jarvis_agent.config import CapabilityConfig, ConfigError, JarvisConfig
 from jarvis_agent.hardware import HardwareStatus
+from jarvis_agent.logs import kv
 from jarvis_agent.store.config import DOMAINS
 
 log = logging.getLogger(__name__)
@@ -147,9 +148,14 @@ def resolve(
             continue
         disabled[manifest.name] = outcome
         if outcome.required:
-            log.warning("capability %s is on but unavailable: %s", manifest.name, outcome.reason)
+            log.warning(
+                "capability on but unavailable",
+                extra=kv(capability=manifest.name, reason=outcome.reason),
+            )
         else:
-            log.info("capability %s disabled: %s", manifest.name, outcome.reason)
+            log.info(
+                "capability disabled", extra=kv(capability=manifest.name, reason=outcome.reason)
+            )
     return CapabilityReport(enabled, disabled)
 
 

@@ -1,6 +1,7 @@
 """Runtime wiring: FastAPI lifespan startup/shutdown and the voice loop over WebSocket."""
 
 import asyncio
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -44,12 +45,16 @@ def ws(client: TestClient) -> Iterator[WebSocketTestSession]:
 
 
 def _frames_until_idle(ws: WebSocketTestSession) -> list[dict[str, Any]]:
+    """The turn's frames; all carry the turn's one trace id, which is then removed."""
     frames = []
     while True:
         frames.append(ws.receive_json())
-        if frames[-1] == {"v": 0, "type": "state", "id": None, "payload": {"state": "idle"}}:
+        if frames[-1]["type"] == "state" and frames[-1]["payload"]["state"] == "idle":
             if any(f["type"] == "reply" and f["payload"]["done"] for f in frames):
-                return frames
+                break
+    trace_ids = {f["payload"].pop("trace_id", None) for f in frames}
+    assert len(trace_ids) == 1 and re.fullmatch(r"[0-9a-f]{32}", str(*trace_ids)), trace_ids
+    return frames
 
 
 def test_lifespan_starts_and_stops_the_runtime(agent_env: None) -> None:
@@ -115,7 +120,9 @@ def test_say_without_runtime_is_unavailable() -> None:
     with TestClient(app).websocket_connect("/ws") as ws:  # no lifespan: no voice loop
         ws.receive_json()  # hello
         ws.send_json({"v": 0, "type": "say", "id": "1", "payload": {"text": "hi"}})
-        assert ws.receive_json()["payload"]["code"] == "unavailable"
+        payload = ws.receive_json()["payload"]
+        assert payload["code"] == "unavailable"
+        assert re.fullmatch(r"[0-9a-f]{32}", payload["trace_id"])  # the request's trace
 
 
 def test_reply_not_spoken_is_flagged_additively() -> None:

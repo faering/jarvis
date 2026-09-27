@@ -4,3 +4,6 @@
 [hardware]
 hailo = "off"
 imx500 = "off"
+
+[logging]
+level = "DEBUG" # docs/logging.md: DEBUG in dev, INFO in production

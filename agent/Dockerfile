@@ -39,4 +39,5 @@ LABEL org.opencontainers.image.title="jarvis-agent" \
       org.opencontainers.image.version="${VERSION:-unknown}" \
       org.opencontainers.image.revision="${REVISION:-unknown}" \
       org.opencontainers.image.created="${BUILD_TIME:-unknown}"
-CMD ["uvicorn", "jarvis_agent.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# The entrypoint configures logging (docs/logging.md) before uvicorn starts.
+CMD ["python", "-m", "jarvis_agent", "--host", "0.0.0.0", "--port", "8000"]

@@ -19,17 +19,24 @@ It says ``spoken=False`` if the queue refused the turn or dropped a chunk of it,
 playback of part of it had already failed by then; speech runs on after ``done``, so later
 failures are only logged. Memory is best-effort: a store failure is logged and the reply
 still completes (and ``done`` is still sent).
+
+Each turn runs under a trace id (docs/logging.md): started by a ``Wake`` (continued by its
+utterance) or an utterance, logged as ``turn started`` / ``turn finished`` and stamped on
+every event of the turn. An offloaded reply is spoken later under its original id.
 """
 
 import asyncio
 import collections
 import contextlib
+import dataclasses
 import logging
+import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
 from jarvis_agent.backends import STT, BackendError, ChatMessage
+from jarvis_agent.logs import TRACE, kv, new_trace_id, reset_trace_id, set_trace_id
 from jarvis_agent.loop.events import LoopEvent, LoopState, ReplyText, StateChanged, Transcript
 from jarvis_agent.loop.source import AudioSource, Cancel, SourceEvent, Utterance, Wake
 from jarvis_agent.routing import Reply, Route, Router, Task
@@ -80,6 +87,15 @@ class _Offload:
 @dataclass(frozen=True)
 class _Offloaded:
     handle: asyncio.Task[Reply]
+    trace_id: str | None
+
+
+@dataclass(frozen=True)
+class _Trace:
+    """The turn the actor is in: its trace id and when it started (monotonic)."""
+
+    trace_id: str
+    started: float
 
 
 @dataclass(frozen=True)
@@ -131,7 +147,9 @@ class VoiceLoop:
         self._state = LoopState.IDLE
         self._generation = 0  # bumped by every barge-in: older turns are stale
         self._turn: asyncio.Task[None] | None = None
-        self._ready: collections.deque[Reply | None] = collections.deque()  # None = failed
+        # Finished heavy replies (None = failed) with their turn's trace id.
+        self._ready: collections.deque[tuple[Reply | None, str | None]] = collections.deque()
+        self._trace: _Trace | None = None
         self._listeners: list[Listener] = []
         self._runner: asyncio.Task[None] | None = None
         self._tasks: set[asyncio.Task[None]] = set()
@@ -165,9 +183,9 @@ class VoiceLoop:
         self._inputs += 1
         self._inbox.put_nowait(event)
 
-    def say(self, text: str, *, deep: bool = False) -> None:
-        """Text input: a complete utterance, as if spoken."""
-        self.submit(Utterance(text=text, deep=deep))
+    def say(self, text: str, *, deep: bool = False, trace_id: str | None = None) -> None:
+        """Text input: a complete utterance, as if spoken (under ``trace_id``, if given)."""
+        self.submit(Utterance(text=text, deep=deep, trace_id=trace_id))
 
     def attach(self, source: AudioSource) -> None:
         """Consume ``source`` in the background until it ends or the loop closes."""
@@ -195,18 +213,26 @@ class VoiceLoop:
                 await self._handle(message)
                 await self._speak_ready()
             except Exception:
-                log.exception("voice loop: failed to handle %r", message)
+                log.exception(
+                    "failed to handle a message", extra=kv(message=type(message).__name__)
+                )
 
     async def _handle(self, message: _Message) -> None:
         match message:
             case Wake():
                 await self._barge_in()
+                self._begin(new_trace_id(), "wake_word")
                 self._set(LoopState.LISTENING)
             case Cancel():
                 if self._state is LoopState.LISTENING:
-                    self._set(LoopState.IDLE)
+                    self._set(LoopState.IDLE, outcome="cancelled")
             case Utterance():
-                await self._barge_in()
+                # The utterance after a wake word continues that turn.
+                woken = self._state is LoopState.LISTENING and message.trace_id is None
+                await self._barge_in(keep=woken)
+                if not (woken and self._trace):
+                    source = "voice" if message.audio is not None else "say"
+                    self._begin(message.trace_id or new_trace_id(), source)
                 self._set(LoopState.LISTENING)
                 self._set(LoopState.ROUTING)  # the utterance is the turn boundary
                 self._turn = asyncio.create_task(
@@ -233,10 +259,14 @@ class VoiceLoop:
                 if handle.cancelled():
                     self._offloads -= 1
                 elif (error := handle.exception()) is not None:
-                    log.error("voice loop: offloaded task failed: %s", error)
-                    self._ready.append(None)
+                    token = set_trace_id(message.trace_id)
+                    try:
+                        log.error("offloaded task failed", exc_info=error)
+                    finally:
+                        reset_trace_id(token)
+                    self._ready.append((None, message.trace_id))
                 else:
-                    self._ready.append(handle.result())
+                    self._ready.append((handle.result(), message.trace_id))
             case _SpeechDone():
                 self._idle_if_silent()
 
@@ -249,7 +279,7 @@ class VoiceLoop:
         """Routing -> Offloaded -> Idle: dispatch a heavy task, unless too many are in flight
         (then say so at once rather than pile up unbounded work)."""
         if self._offloads >= self._max_offloads:
-            log.warning("voice loop: %d heavy tasks in flight, refusing another", self._offloads)
+            log.warning("heavy tasks in flight, refusing another", extra=kv(count=self._offloads))
             turn, spoken = self._say_turn(BUSY)
             self._set(LoopState.SPEAKING)
             self._emit(ReplyText(text=BUSY, done=True, spoken=spoken))
@@ -258,11 +288,15 @@ class VoiceLoop:
         self._set(LoopState.OFFLOADED)
         self._offloads += 1
         handle = self._router.offload(Task(messages, route=Route.HEAVY))
-        handle.add_done_callback(lambda done: self._inbox.put_nowait(_Offloaded(done)))
-        self._set(LoopState.IDLE)  # dispatched: the loop stays responsive
+        trace_id = self._trace.trace_id if self._trace else None
+        handle.add_done_callback(lambda done: self._inbox.put_nowait(_Offloaded(done, trace_id)))
+        self._set(LoopState.IDLE, outcome="offloaded")  # dispatched: the loop stays responsive
 
-    async def _barge_in(self) -> None:
-        """A new turn wins: drop the reply being produced and silence speech."""
+    async def _barge_in(self, *, keep: bool = False) -> None:
+        """A new turn wins: drop the reply being produced and silence speech. The current
+        turn's trace ends, unless ``keep`` (the utterance of a wake-word turn)."""
+        if self._trace is not None and not keep:
+            self._finish("barged_in")
         self._generation += 1
         turn, self._turn = self._turn, None
         if turn is not None:
@@ -279,14 +313,25 @@ class VoiceLoop:
             and self._turn is None
             and self._state not in (LoopState.LISTENING, LoopState.ROUTING)
         ):
-            reply = self._ready.popleft()
+            reply, trace_id = self._ready.popleft()
             self._offloads -= 1
             text, degraded = (SORRY, True) if reply is None else (reply.text, reply.degraded)
             turn, spoken = self._say_turn(text)  # queued behind speech still playing
-            self._set(LoopState.SPEAKING)
+            if self._trace is None and trace_id is not None:
+                # The loop is free: its turn resumes, and Speaking -> Idle finishes it.
+                self._trace = _Trace(trace_id, time.monotonic())
+                set_trace_id(trace_id)
+            # Stamped with its own turn's id, not the one the loop may be in now.
+            self._set(LoopState.SPEAKING, trace_id=trace_id)
             if reply is not None:
                 await self._remember(text)
-            self._emit(ReplyText(text=text, done=True, degraded=degraded, spoken=spoken))
+            done = ReplyText(text=text, done=True, degraded=degraded, spoken=spoken)
+            self._emit(dataclasses.replace(done, trace_id=trace_id))
+            token = set_trace_id(trace_id)
+            try:
+                log.info("offloaded reply spoken", extra=kv(chars=len(text), degraded=degraded))
+            finally:
+                reset_trace_id(token)
             self._watch(turn)
 
     # ---- one turn ----------------------------------------------------------------------
@@ -298,6 +343,7 @@ class VoiceLoop:
         try:
             text = await self._transcribe(utterance)
             if not text:
+                log.debug("nothing was said")
                 self._post(generation, StateChanged(LoopState.IDLE))  # nothing was said
             else:
                 self._post(generation, Transcript(text))
@@ -305,7 +351,9 @@ class VoiceLoop:
                 # Route on the new utterance alone: a long conversation history must not
                 # push every later turn onto the heavy route.
                 user: list[ChatMessage] = [{"role": "user", "content": text}]
-                if self._router.route(Task(user, deep=utterance.deep)) is Route.HEAVY:
+                route = self._router.route(Task(user, deep=utterance.deep))
+                log.debug("routed", extra=kv(route=route.value, deep=utterance.deep))
+                if route is Route.HEAVY:
                     messages = await self._context(budget=None)
                     self._inbox.put_nowait(_Offload(generation, messages))
                 else:
@@ -313,8 +361,8 @@ class VoiceLoop:
                     speech_turn = await self._stream(generation, await self._context(budget))
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # STT, store or no local LLM: say so rather than go silent
-            log.error("voice loop: turn failed: %s", exc)
+        except Exception:  # STT, store or no local LLM: say so rather than go silent
+            log.error("turn failed", exc_info=True)
             speech_turn, spoken = self._say_turn(SORRY)
             self._post(generation, StateChanged(LoopState.SPEAKING))
             self._post(generation, ReplyText(text=SORRY, done=True, spoken=spoken))
@@ -322,10 +370,15 @@ class VoiceLoop:
 
     async def _transcribe(self, utterance: Utterance) -> str:
         if utterance.text is not None:
-            return utterance.text.strip()
-        assert utterance.audio is not None  # guaranteed by Utterance
-        text = await self._stt.transcribe(utterance.audio, audio_format=utterance.audio_format)
-        return text.strip()
+            text = utterance.text.strip()
+        else:
+            assert utterance.audio is not None  # guaranteed by Utterance
+            started = time.monotonic()
+            audio, audio_format = utterance.audio, utterance.audio_format
+            text = (await self._stt.transcribe(audio, audio_format=audio_format)).strip()
+            log.debug("transcribed", extra=kv(duration_ms=_ms_since(started), chars=len(text)))
+        log.log(TRACE, "heard text", extra=kv(text=text))  # user text: TRACE only
+        return text
 
     async def _stream(self, generation: int, messages: list[ChatMessage]) -> int:
         """Hot path: stream the local LLM into speech as it generates."""
@@ -335,13 +388,16 @@ class VoiceLoop:
         dropped = self._speech.dropped  # chunks the queue drops count as not spoken
         self._post(generation, StateChanged(LoopState.SPEAKING))
         parts: list[str] = []
+        started = time.monotonic()
         try:
             async for delta in llm.stream(messages):
+                if not parts:
+                    log.debug("first token", extra=kv(latency_ms=_ms_since(started)))
                 parts.append(delta)
                 self._speech.feed(turn, delta)
                 self._post(generation, ReplyText(delta=delta))
-        except BackendError as exc:
-            log.error("voice loop: local LLM failed: %s", exc)
+        except BackendError:
+            log.error("local LLM failed", exc_info=True, extra=kv(chars=len("".join(parts))))
             if not parts:  # nothing said yet: apologise, and don't remember the apology
                 self._speech.feed(turn, SORRY)
                 self._speech.end_turn(turn)
@@ -352,6 +408,8 @@ class VoiceLoop:
         self._speech.end_turn(turn)
         spoken = self._spoken(turn, accepted, dropped)
         text = "".join(parts)
+        log.debug("reply streamed", extra=kv(duration_ms=_ms_since(started), chars=len(text)))
+        log.log(TRACE, "reply text", extra=kv(text=text))
         await self._remember(text)  # best-effort: done is sent even if this fails
         self._post(generation, ReplyText(text=text, done=True, spoken=spoken))
         return turn
@@ -373,8 +431,8 @@ class VoiceLoop:
         the reply short (stores raise ``StoreError``; ``SqliteStore`` wraps sqlite3 errors)."""
         try:
             await self._memory.append("assistant", reply)
-        except StoreError as exc:
-            log.error("voice loop: could not store the reply: %s", exc)
+        except StoreError:
+            log.error("could not store the reply", exc_info=True)
 
     def _post(self, generation: int, event: LoopEvent) -> None:
         """From the turn task: have the actor apply ``event`` (see ``_FromTurn``)."""
@@ -414,24 +472,51 @@ class VoiceLoop:
             try:
                 self.submit(event)
             except LoopBusy:
-                log.warning("voice loop: input backlog full, dropped %r", event)
+                log.warning(
+                    "input backlog full, dropped an event", extra=kv(event=type(event).__name__)
+                )
 
     def _spawn(self, work: Coroutine[Any, Any, None], name: str) -> None:
         task = asyncio.create_task(work, name=name)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    def _set(self, state: LoopState) -> None:
+    def _begin(self, trace_id: str, source: str) -> None:
+        """Start a turn's trace. The actor's context holds its id, so the turn task and
+        offloaded work (created from it) log under it too."""
+        self._trace = _Trace(trace_id, time.monotonic())
+        set_trace_id(trace_id)
+        log.info("turn started", extra=kv(trace_id=trace_id, source=source))
+
+    def _finish(self, outcome: str) -> None:
+        if self._trace is None:
+            return
+        duration_ms = _ms_since(self._trace.started)
+        log.info("turn finished", extra=kv(duration_ms=duration_ms, outcome=outcome))
+        self._trace = None
+        set_trace_id(None)
+
+    def _set(self, state: LoopState, *, trace_id: str | None = None, outcome: str = "done") -> None:
+        """Change the state. Back to Idle ends the current turn's trace (``outcome``), after
+        its Idle event. ``trace_id`` stamps the event with another turn's id."""
         if state is not self._state:
             self._state = state
-            self._emit(StateChanged(state))
+            self._emit(StateChanged(state, trace_id=trace_id))
+        if state is LoopState.IDLE:
+            self._finish(outcome)
 
     def _emit(self, event: LoopEvent) -> None:
+        if event.trace_id is None and self._trace is not None:
+            event = dataclasses.replace(event, trace_id=self._trace.trace_id)
         for listener in list(self._listeners):
             try:
                 listener(event)
             except Exception:
-                log.exception("voice loop: listener failed")
+                log.exception("listener failed")
+
+
+def _ms_since(started: float) -> int:
+    return round((time.monotonic() - started) * 1000)
 
 
 def _fit(history: list[ChatMessage], budget: int) -> list[ChatMessage]:

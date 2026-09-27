@@ -8,6 +8,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from jarvis_agent import protocol
+from jarvis_agent.logs import kv, new_trace_id, traced
 from jarvis_agent.loop import LoopBusy, LoopEvent, ReplyText, StateChanged, Transcript, VoiceLoop
 from jarvis_agent.runtime import Runtime, lifespan
 from jarvis_agent.version import BuildInfo, build_info
@@ -90,24 +91,36 @@ def _say(request: protocol.Envelope, loop: VoiceLoop | None) -> protocol.Envelop
         say = protocol.SayPayload.model_validate(request.payload)
     except ValidationError as exc:
         return protocol.error("bad_payload", str(exc.errors(include_url=False)), request.id)
-    if loop is None:
-        return protocol.error("unavailable", "the voice loop is not running", request.id)
-    try:
-        loop.say(say.text, deep=say.deep)
-    except LoopBusy:
-        return protocol.error("busy", "too many requests are waiting; try again", request.id)
+    # The request's trace: the voice loop logs "turn started" with it; a refusal logs it here.
+    with traced(new_trace_id()) as trace_id:
+        if loop is None:
+            log.warning("say refused: no voice loop", extra=kv(trace_id=trace_id))
+            message = "the voice loop is not running"
+            return protocol.error("unavailable", message, request.id, trace_id=trace_id)
+        try:
+            loop.say(say.text, deep=say.deep, trace_id=trace_id)
+        except LoopBusy:
+            log.warning("say refused: loop busy", extra=kv(trace_id=trace_id))
+            message = "too many requests are waiting; try again"
+            return protocol.error("busy", message, request.id, trace_id=trace_id)
     return None
 
 
 def _event(event: LoopEvent) -> protocol.Envelope:
+    """A loop event as a frame, with its turn's ``trace_id``."""
     match event:
         case StateChanged(state):
-            return protocol.state(state.value)
+            return protocol.state(state.value, trace_id=event.trace_id)
         case Transcript(text):
-            return protocol.transcript(text)
+            return protocol.transcript(text, trace_id=event.trace_id)
         case ReplyText(delta, text, done, degraded, spoken):
             return protocol.reply(
-                delta=delta, text=text, done=done, degraded=degraded, spoken=spoken
+                delta=delta,
+                text=text,
+                done=done,
+                degraded=degraded,
+                spoken=spoken,
+                trace_id=event.trace_id,
             )
 
 
@@ -115,7 +128,7 @@ def _post(outbox: asyncio.Queue[protocol.Envelope], envelope: protocol.Envelope)
     try:
         outbox.put_nowait(envelope)
     except asyncio.QueueFull:
-        log.warning("ws: client too slow, dropped a %r frame", envelope.type)
+        log.warning("client too slow, dropped a frame", extra=kv(type=envelope.type))
 
 
 async def _write(websocket: WebSocket, outbox: asyncio.Queue[protocol.Envelope]) -> None:

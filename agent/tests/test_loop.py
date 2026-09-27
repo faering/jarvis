@@ -8,6 +8,7 @@ import sqlite3
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -520,9 +521,9 @@ async def test_only_the_actor_changes_the_state() -> None:
         callers: list[bool] = []
         set_state = h.loop._set
 
-        def spy(state: LoopState) -> None:
+        def spy(state: LoopState, **kwargs: Any) -> None:
             callers.append(asyncio.current_task() is h.loop._runner)
-            set_state(state)
+            set_state(state, **kwargs)
 
         h.loop._set = spy  # type: ignore[method-assign]
         h.loop.say("hot")
@@ -564,3 +565,32 @@ def test_hot_context_is_trimmed_oldest_first() -> None:
     assert _fit(history, 20) == history[1:]
     assert _fit(history, 5) == history[2:]  # the new utterance always stays
     assert _fit(history, 30) == history
+
+
+# ---- trace ids (docs/logging.md) -------------------------------------------------------
+
+
+async def test_each_turn_has_one_trace_id_on_all_its_events(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="jarvis_agent.loop.voice")
+    async with running(ScriptLLM(["ok"]), stt=MockSTT("hi")) as h:
+        h.loop.submit(Wake())  # the wake word starts the turn; its utterance continues it
+        h.loop.submit(Utterance(audio=b"voice"))
+        await h.events.until_idle_after(1)
+        h.loop.say("again", trace_id="f" * 32)  # a say request brings its own id
+        await h.events.until_idle_after(2)
+
+    end = h.events.events.index(StateChanged(IDLE)) + 1  # the first turn ends at Idle
+    first, second = h.events.events[:end], h.events.events[end:]
+    assert {e.trace_id for e in second} == {"f" * 32}
+    (trace_id,) = {e.trace_id for e in first}
+    assert trace_id is not None and len(trace_id) == 32 and trace_id != "f" * 32
+    started = [r for r in caplog.records if r.getMessage() == "turn started"]
+    assert [r.attributes for r in started] == [
+        {"trace_id": trace_id, "source": "wake_word"},
+        {"trace_id": "f" * 32, "source": "say"},
+    ]
+    finished = [r.attributes for r in caplog.records if r.getMessage() == "turn finished"]
+    assert [f["outcome"] for f in finished] == ["done", "done"]
+    assert all(isinstance(f["duration_ms"], int) for f in finished)

@@ -25,7 +25,7 @@ from jarvis_agent.config.schema import JarvisConfig
 
 type Leaves = dict[tuple[str, ...], tuple[Any, str]]  # path -> (value, source)
 
-# Existing env names (backends.config, store.config) -> config path. Lower-cased values.
+# Env names (backends.config, store.config, logging) -> config path. Lower-cased values.
 ENV_KEYS: dict[str, tuple[str, ...]] = {
     f"JARVIS_{role.upper()}_{field.upper()}": ("backends", role, field)
     for role in ("llm", "stt", "tts", "heavy_llm")
@@ -36,6 +36,8 @@ ENV_KEYS: dict[str, tuple[str, ...]] = {
     "JARVIS_NOTES_PROVIDER": ("store", "notes"),
     "JARVIS_TODO_PROVIDER": ("store", "todo"),
     "JARVIS_CALENDAR_PROVIDER": ("store", "calendar"),
+    "JARVIS_LOG_DIR": ("logging", "dir"),
+    "JARVIS_LOG_LEVEL": ("logging", "level"),
 }
 ENV_PREFIXES = {"JARVIS_HW_": "hardware", "JARVIS_CAP_": "capabilities"}
 LOWERCASE = {"backend", "notes", "todo", "calendar"}
