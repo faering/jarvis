@@ -5,9 +5,23 @@ import {
   envelope,
   parseEnvelope,
   PROTOCOL_VERSION,
+  traceIdOf,
   type Envelope,
   type ErrorPayload,
 } from "@jarvis/protocol";
+import { logger, setTurn } from "../log/logger.ts";
+
+const log = logger("agent.client");
+
+/** Frames that belong to a voice turn or request; their trace id sets the log turn. */
+const TURN_FRAMES: ReadonlySet<string> = new Set([
+  "state",
+  "transcript",
+  "reply",
+  "error",
+]);
+
+type LostReason = "closed" | "hello_timeout" | "pong_timeout";
 
 export const DEFAULT_AGENT_WS_URL = "ws://127.0.0.1:8000/ws";
 
@@ -103,12 +117,14 @@ export class AgentClient {
 
   /** Disconnect and stop reconnecting. */
   stop(): void {
+    log.info("stopped");
     this.teardown();
     this.update({ state: "closed", retryAt: null });
   }
 
   /** Manual retry, e.g. after `incompatible`: reconnect now, backoff reset. */
   retry(): void {
+    log.info("manual retry");
     this.teardown();
     this.attempt = 0;
     this.connect("connecting");
@@ -116,24 +132,43 @@ export class AgentClient {
 
   private connect(state: "connecting" | "reconnecting"): void {
     this.update({ state, retryAt: null });
+    log.info("connecting", { url: this.url, attempt: this.attempt + 1 });
     const socket = new this.WS(this.url);
     this.socket = socket;
     socket.onmessage = (event: MessageEvent) => {
       if (typeof event.data === "string") this.onFrame(event.data);
     };
-    socket.onclose = () => this.reconnect();
+    socket.onclose = () => this.reconnect("closed");
     socket.onerror = () => {}; // a close event always follows
     // Covers both a hanging connect and a silent agent.
-    this.helloTimer = setTimeout(() => this.reconnect(), this.helloTimeoutMs);
+    this.helloTimer = setTimeout(
+      () => this.reconnect("hello_timeout"),
+      this.helloTimeoutMs,
+    );
   }
 
   private onFrame(raw: string): void {
     const frame = parseEnvelope(raw);
-    if (!frame) return;
+    if (!frame) {
+      log.warn("invalid frame dropped", { bytes: raw.length });
+      return;
+    }
+    if (TURN_FRAMES.has(frame.type)) setTurn(traceIdOf(frame.payload));
+    log.trace("frame received", {
+      type: frame.type,
+      id: frame.id ?? undefined,
+      v: frame.v,
+    });
     // Every frame carries the envelope version. hello goes through anyway so a mismatch
     // is reported as `incompatible`; any other frame from another version is ignored
     // (a foreign pong then lets the heartbeat time out and reconnect).
-    if (frame.type !== "hello" && frame.v !== PROTOCOL_VERSION) return;
+    if (frame.type !== "hello" && frame.v !== PROTOCOL_VERSION) {
+      log.warn("frame of another protocol version dropped", {
+        type: frame.type,
+        v: frame.v,
+      });
+      return;
+    }
     switch (frame.type) {
       case "hello":
         this.onHello(frame);
@@ -145,9 +180,15 @@ export class AgentClient {
           this.scheduleHeartbeat();
         }
         break;
-      case "error":
-        this.update({ lastError: asError(frame.payload) });
+      case "error": {
+        const error = asError(frame.payload);
+        log.warn("agent reported an error", {
+          "error.code": error.code,
+          "error.message": error.message,
+        });
+        this.update({ lastError: error });
         break;
+      }
     }
   }
 
@@ -162,10 +203,20 @@ export class AgentClient {
       !hello ||
       hello.protocol !== PROTOCOL_VERSION
     ) {
+      log.error("agent speaks another protocol, not retrying", {
+        "agent.version": agentVersion,
+        "agent.protocol": agentProtocol,
+        "envelope.v": frame.v,
+        protocol: PROTOCOL_VERSION,
+      });
       this.teardown();
       this.update({ state: "incompatible", agentVersion, agentProtocol });
       return;
     }
+    log.info("connected", {
+      "agent.version": agentVersion,
+      protocol: agentProtocol,
+    });
     this.attempt = 0;
     this.update({ state: "open", agentVersion, agentProtocol, retryAt: null });
     this.scheduleHeartbeat();
@@ -177,20 +228,32 @@ export class AgentClient {
       const id = `ping-${++this.pingSeq}`;
       this.pendingPing = id;
       this.send(envelope("ping", id));
-      this.pongTimer = setTimeout(() => this.reconnect(), this.pongTimeoutMs);
+      this.pongTimer = setTimeout(
+        () => this.reconnect("pong_timeout"),
+        this.pongTimeoutMs,
+      );
     }, this.heartbeatIntervalMs);
   }
 
   private send(frame: Envelope): void {
     if (this.socket?.readyState === this.WS.OPEN) {
+      log.trace("frame sent", { type: frame.type, id: frame.id ?? undefined });
       this.socket.send(JSON.stringify(frame));
     }
   }
 
   /** Drop the current socket and schedule the next attempt. */
-  private reconnect(): void {
+  private reconnect(reason: LostReason): void {
+    if (this.snapshot.state === "open") log.warn("connection lost", { reason });
+    setTurn(null);
     this.teardown();
     const delay = this.backoff(this.attempt++);
+    // `attempt` is 1-based in logs: the upcoming connect is attempt N.
+    log.info("retrying", {
+      reason,
+      attempt: this.attempt + 1,
+      backoff_ms: delay,
+    });
     this.update({ state: "reconnecting", retryAt: this.now() + delay });
     this.retryTimer = setTimeout(() => this.connect("reconnecting"), delay);
   }
