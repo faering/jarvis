@@ -40,6 +40,8 @@ its hourly prune timer ([logging](logging.md)). Details are in the script.
 - Exit **3** = steps it deferred to keep you from being locked out (no SSH key yet,
   Tailscale not up). It prints why; fix that and re-run.
 - **Re-run any time** (e.g. after `git pull`); `--check` reports drift and changes nothing.
+- **Log out and back in** after the first run: a login only gets the new `jarvis-log` group
+  at a fresh login. Until then `jarvis-logs` can't read the logs (it says so).
 - After step 3, LAN SSH is closed: use `ssh <user>@<pi>`. The keyboard and screen always work.
 
 Check from your PC: `ssh <user>@<pi>`. The full name is in the admin console.
@@ -91,6 +93,9 @@ settings), or on the Pi `sudo docker login ghcr.io` with a `read:packages` PAT. 
   `journalctl -u docker`, last boot `journalctl -b -1`.
 - **Updates:** Debian, Pi and Tailscale updates install daily. If one needs a reboot
   (kernel, libc), the Pi reboots at 04:00. Docker updates are manual: `sudo apt upgrade`.
+- **The Jarvis app** starts full screen at login once it has been deployed (autostart in
+  `/etc/xdg/autostart/jarvis.desktop`). Close it with Alt+F4; start it again from the menu
+  (windowed) or with `jarvis-app --fullscreen`.
 - **Bluetooth keyboard:** run `bluetoothctl`, then `power on`, `agent on`, `default-agent`,
   `scan on`; put the keyboard in pairing mode, then `pair <MAC>` (type the PIN shown on the
   keyboard + Enter), `trust <MAC>` (reconnects after reboots), `connect <MAC>`, `quit`.
