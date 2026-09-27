@@ -103,6 +103,12 @@ jobs:
             echo "::error::Set both TS_OAUTH_CLIENT_ID and TS_OAUTH_SECRET, or neither (docs/pi-setup.md)."
             exit 1
           fi
+          # A Tailscale name only resolves inside the tailnet: without the OAuth client the
+          # runner can't reach it, and ssh would fail later with a vague "Could not resolve".
+          if [[ -z "$TS_OAUTH_CLIENT_ID" && "$HOST" == *.ts.net ]]; then
+            echo "::error::PI_SSH_HOST is a Tailscale name but TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET are not set in the pi environment (docs/pi-setup.md step 5)."
+            exit 1
+          fi
           missing=()
           [[ -n "$HOST" ]] || missing+=(PI_SSH_HOST)
           [[ -n "$USER_" ]] || missing+=(PI_SSH_USER)
