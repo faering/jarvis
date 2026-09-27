@@ -11,6 +11,12 @@ tauri-build = { version = "=2.6.3", features = [] }
 
 [dependencies]
 tauri = { version = "=2.11.6", features = [] }
+tauri-plugin-log = "=2.9.2"
+log = { version = "0.4", features = ["kv"] }
+time = "0.3"
+
+[dev-dependencies]
+time = { version = "0.3", features = ["macros"] }
 
 [profile.release]
 codegen-units = 1
