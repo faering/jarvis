@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import type { Presence } from "../presence/presence.ts";
-import { OrbScreen } from "./OrbScreen.tsx";
+import type { Presence } from "../../presence/presence.ts";
+import { OrbScreen } from "../orb/OrbScreen.tsx";
+import "./ambient.css";
 
 /** Current time, re-rendered every `intervalMs`. */
 function useNow(intervalMs: number): Date {

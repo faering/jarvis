@@ -1,22 +1,17 @@
-/** The default-screen prototypes being compared in spike #133. */
-export const VARIANTS = ["face", "orb", "ambient"] as const;
-export type Variant = (typeof VARIANTS)[number];
+import {
+  DEFAULT_SCREEN,
+  isScreenId,
+  SCREEN_IDS,
+  type ScreenId,
+} from "./catalogue.ts";
 
-export const VARIANT_LABELS: Record<Variant, string> = {
-  face: "Face",
-  orb: "Orb",
-  ambient: "Ambient",
-};
+/** Which catalogue screen to show, and whether the demo driver runs. */
 
-export const VARIANT_STORAGE_KEY = "jarvis.screen";
+export const SCREEN_STORAGE_KEY = "jarvis.screen";
 export const DEMO_STORAGE_KEY = "jarvis.demo";
 
 /** The slice of Web Storage we use; injectable for tests. */
 export type KeyValueStore = Pick<Storage, "getItem" | "setItem">;
-
-export function isVariant(value: unknown): value is Variant {
-  return typeof value === "string" && VARIANTS.includes(value as Variant);
-}
 
 function read(store: KeyValueStore | null, key: string): string | null {
   try {
@@ -36,29 +31,29 @@ function write(store: KeyValueStore | null, key: string, value: string): void {
 
 /**
  * Pick the screen to show first: `?screen=` (explicit) > remembered choice >
- * `VITE_DEFAULT_SCREEN` > face. Invalid values are skipped.
+ * `VITE_DEFAULT_SCREEN` > the catalogue default. Invalid values are skipped.
  */
-export function initialVariant(
+export function initialScreen(
   search: string,
   store: KeyValueStore | null,
   envDefault: string | undefined,
-): Variant {
+): ScreenId {
   const candidates = [
     new URLSearchParams(search).get("screen"),
-    read(store, VARIANT_STORAGE_KEY),
+    read(store, SCREEN_STORAGE_KEY),
     envDefault,
   ];
-  return candidates.find(isVariant) ?? "face";
+  return candidates.find(isScreenId) ?? DEFAULT_SCREEN;
 }
 
-export function saveVariant(store: KeyValueStore | null, variant: Variant) {
-  write(store, VARIANT_STORAGE_KEY, variant);
+export function saveScreen(store: KeyValueStore | null, screen: ScreenId) {
+  write(store, SCREEN_STORAGE_KEY, screen);
 }
 
-/** The next/previous variant, wrapping (swipe and the switcher use this). */
-export function stepVariant(current: Variant, delta: 1 | -1): Variant {
-  const i = VARIANTS.indexOf(current);
-  return VARIANTS[(i + delta + VARIANTS.length) % VARIANTS.length]!;
+/** The next/previous screen in catalogue order, wrapping (swipe uses this). */
+export function stepScreen(current: ScreenId, delta: 1 | -1): ScreenId {
+  const i = SCREEN_IDS.indexOf(current);
+  return SCREEN_IDS[(i + delta + SCREEN_IDS.length) % SCREEN_IDS.length]!;
 }
 
 /** Demo mode: `?demo=0|1` > remembered > on (no voice loop to drive it yet). */

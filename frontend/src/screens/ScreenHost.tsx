@@ -1,20 +1,29 @@
-import { useRef, useState, type PointerEvent } from "react";
+import {
+  lazy,
+  Suspense,
+  useRef,
+  useState,
+  type ComponentType,
+  type LazyExoticComponent,
+  type PointerEvent,
+} from "react";
 import {
   describePresence,
   type Caption,
   type Presence,
 } from "../presence/presence.ts";
-import { AmbientScreen } from "./AmbientScreen.tsx";
-import { FaceScreen } from "./FaceScreen.tsx";
-import { OrbScreen } from "./OrbScreen.tsx";
 import {
-  saveVariant,
-  stepVariant,
-  VARIANT_LABELS,
-  VARIANTS,
-  type KeyValueStore,
-  type Variant,
-} from "./variants.ts";
+  SCREEN_IDS,
+  SCREENS,
+  type ScreenId,
+  type ScreenProps,
+} from "./catalogue.ts";
+import { saveScreen, stepScreen, type KeyValueStore } from "./selection.ts";
+
+// One lazy component per catalogue entry: a screen's code loads when first shown.
+const LAZY_SCREENS = Object.fromEntries(
+  SCREEN_IDS.map((id) => [id, lazy(SCREENS[id].load)]),
+) as Record<ScreenId, LazyExoticComponent<ComponentType<ScreenProps>>>;
 
 const SWIPE_PX = 60;
 const TAP_PX = 12;
@@ -31,9 +40,9 @@ function CaptionStrip({ caption }: { caption: Caption }) {
   );
 }
 
-export interface ScreenGalleryProps {
+export interface ScreenHostProps {
   presence: Presence;
-  initialVariant: Variant;
+  initialScreen: ScreenId;
   store: KeyValueStore | null;
   demo: boolean;
   onDemoChange: (on: boolean) => void;
@@ -44,24 +53,24 @@ export interface ScreenGalleryProps {
 }
 
 /**
- * Prototype gallery for spike #133: shows one default-screen variant, switched
- * by swipe or the small control bar; the choice is remembered.
+ * Shows one screen from the catalogue, switched by swipe or the small control
+ * bar; the choice is remembered. Only the shown screen is mounted.
  */
-export function ScreenGallery({
+export function ScreenHost({
   presence,
-  initialVariant,
+  initialScreen,
   store,
   demo,
   onDemoChange,
   onTap,
   dimAfterS = 60,
-}: ScreenGalleryProps) {
-  const [variant, setVariant] = useState(initialVariant);
+}: ScreenHostProps) {
+  const [screen, setScreen] = useState(initialScreen);
   const start = useRef<{ x: number; y: number } | null>(null);
 
-  const choose = (next: Variant) => {
-    setVariant(next);
-    saveVariant(store, next);
+  const choose = (next: ScreenId) => {
+    setScreen(next);
+    saveScreen(store, next);
   };
 
   const onPointerDown = (e: PointerEvent) => {
@@ -74,17 +83,18 @@ export function ScreenGallery({
     const dx = e.clientX - from.x;
     const dy = e.clientY - from.y;
     if (Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy)) {
-      choose(stepVariant(variant, dx < 0 ? 1 : -1));
+      choose(stepScreen(screen, dx < 0 ? 1 : -1));
     } else if (Math.abs(dx) < TAP_PX && Math.abs(dy) < TAP_PX) {
       onTap();
     }
   };
 
   const { state, expression, caption } = presence;
+  const Screen = LAZY_SCREENS[screen];
   const quiet = state === "idle" || state === "disconnected";
   return (
     <div
-      className={`screen screen-${variant}${quiet ? " screen-quiet" : ""}`}
+      className={`screen screen-${screen}${quiet ? " screen-quiet" : ""}`}
       data-state={state}
       data-expression={expression}
       style={{ ["--dim-after" as string]: `${dimAfterS}s` }}
@@ -93,25 +103,25 @@ export function ScreenGallery({
       onPointerCancel={() => (start.current = null)}
     >
       <div className="screen-drift">
-        {variant === "face" && <FaceScreen presence={presence} />}
-        {variant === "orb" && <OrbScreen presence={presence} />}
-        {variant === "ambient" && <AmbientScreen presence={presence} />}
+        <Suspense fallback={null}>
+          <Screen presence={presence} />
+        </Suspense>
         {caption && <CaptionStrip caption={caption} />}
       </div>
       <nav
         className="switcher"
-        aria-label="Screen prototypes"
+        aria-label="Screens"
         onPointerDown={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {VARIANTS.map((v) => (
+        {SCREEN_IDS.map((id) => (
           <button
-            key={v}
+            key={id}
             type="button"
-            aria-pressed={v === variant}
-            onClick={() => choose(v)}
+            aria-pressed={id === screen}
+            onClick={() => choose(id)}
           >
-            {VARIANT_LABELS[v]}
+            {SCREENS[id].name}
           </button>
         ))}
         <button

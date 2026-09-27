@@ -7,10 +7,13 @@ import { resolveAppVersion } from "./app-version.ts";
 process.env.VITE_APP_VERSION = resolveAppVersion(process.env.VITE_APP_VERSION);
 
 // Tauri expects a fixed dev port and serves the built files from dist/.
+// Listen on IPv4 loopback: Node may resolve "localhost" to [::1] only, which
+// VS Code's devcontainer port forwarding (127.0.0.1) can't reach.
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: {
+    host: "127.0.0.1",
     port: 5173,
     strictPort: true,
   },

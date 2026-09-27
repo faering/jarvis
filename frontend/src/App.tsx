@@ -4,13 +4,13 @@ import { ConnectionStatus } from "./agent/ConnectionStatus.tsx";
 import { useAgentConnection } from "./agent/useAgentConnection.ts";
 import { DemoDriver } from "./presence/demoDriver.ts";
 import { usePresence } from "./presence/usePresence.ts";
-import { ScreenGallery } from "./screens/ScreenGallery.tsx";
+import { ScreenHost } from "./screens/ScreenHost.tsx";
 import {
   browserStore,
   initialDemo,
-  initialVariant,
+  initialScreen,
   saveDemo,
-} from "./screens/variants.ts";
+} from "./screens/selection.ts";
 
 const version: string = import.meta.env.VITE_APP_VERSION ?? "dev";
 
@@ -22,11 +22,7 @@ export function App({ agent }: { agent: AgentClient }) {
     const dim = Number(new URLSearchParams(search).get("dim"));
     return {
       store,
-      variant: initialVariant(
-        search,
-        store,
-        import.meta.env.VITE_DEFAULT_SCREEN,
-      ),
+      screen: initialScreen(search, store, import.meta.env.VITE_DEFAULT_SCREEN),
       demo: initialDemo(search, store),
       dimAfterS: dim > 0 ? dim : undefined,
     };
@@ -43,9 +39,9 @@ export function App({ agent }: { agent: AgentClient }) {
         <ConnectionStatus snapshot={connection} onRetry={() => agent.retry()} />
       </header>
       <main className="app-main">
-        <ScreenGallery
+        <ScreenHost
           presence={presence}
-          initialVariant={boot.variant}
+          initialScreen={boot.screen}
           store={boot.store}
           demo={demo}
           onDemoChange={(on) => {

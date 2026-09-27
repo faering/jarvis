@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   DEMO_STORAGE_KEY,
   initialDemo,
-  initialVariant,
+  initialScreen,
   saveDemo,
-  saveVariant,
-  stepVariant,
-  VARIANT_STORAGE_KEY,
+  saveScreen,
+  stepScreen,
+  SCREEN_STORAGE_KEY,
   type KeyValueStore,
-} from "./variants.ts";
+} from "./selection.ts";
 
 function memoryStore(init: Record<string, string> = {}): KeyValueStore {
   const data = new Map(Object.entries(init));
@@ -27,37 +27,37 @@ const blocked: KeyValueStore = {
   },
 };
 
-describe("initialVariant", () => {
+describe("initialScreen", () => {
   it("defaults to face", () => {
-    expect(initialVariant("", memoryStore(), undefined)).toBe("face");
+    expect(initialScreen("", memoryStore(), undefined)).toBe("face");
   });
 
   it("prefers query > remembered > env", () => {
-    const store = memoryStore({ [VARIANT_STORAGE_KEY]: "orb" });
-    expect(initialVariant("?screen=ambient", store, "face")).toBe("ambient");
-    expect(initialVariant("", store, "ambient")).toBe("orb");
-    expect(initialVariant("", memoryStore(), "ambient")).toBe("ambient");
+    const store = memoryStore({ [SCREEN_STORAGE_KEY]: "orb" });
+    expect(initialScreen("?screen=ambient", store, "face")).toBe("ambient");
+    expect(initialScreen("", store, "ambient")).toBe("orb");
+    expect(initialScreen("", memoryStore(), "ambient")).toBe("ambient");
   });
 
   it("skips invalid values and survives blocked storage", () => {
-    const store = memoryStore({ [VARIANT_STORAGE_KEY]: "hologram" });
-    expect(initialVariant("?screen=nope", store, "orb")).toBe("orb");
-    expect(initialVariant("", blocked, undefined)).toBe("face");
-    expect(() => saveVariant(blocked, "orb")).not.toThrow();
+    const store = memoryStore({ [SCREEN_STORAGE_KEY]: "hologram" });
+    expect(initialScreen("?screen=nope", store, "orb")).toBe("orb");
+    expect(initialScreen("", blocked, undefined)).toBe("face");
+    expect(() => saveScreen(blocked, "orb")).not.toThrow();
   });
 
-  it("remembers the chosen variant", () => {
+  it("remembers the chosen screen", () => {
     const store = memoryStore();
-    saveVariant(store, "ambient");
-    expect(initialVariant("", store, "face")).toBe("ambient");
+    saveScreen(store, "ambient");
+    expect(initialScreen("", store, "face")).toBe("ambient");
   });
 });
 
-describe("stepVariant", () => {
+describe("stepScreen", () => {
   it("wraps in both directions", () => {
-    expect(stepVariant("face", 1)).toBe("orb");
-    expect(stepVariant("ambient", 1)).toBe("face");
-    expect(stepVariant("face", -1)).toBe("ambient");
+    expect(stepScreen("face", 1)).toBe("orb");
+    expect(stepScreen("ambient", 1)).toBe("face");
+    expect(stepScreen("face", -1)).toBe("ambient");
   });
 });
 
