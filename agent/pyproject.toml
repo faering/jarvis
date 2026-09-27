@@ -1,7 +1,7 @@
 [project]
 name = "jarvis-agent"
 # Managed by release-please (tag agent-vX.Y.Z); do not bump by hand.
-version = "0.1.0"
+version = "0.2.0"
 description = "Jarvis agent/API layer: WebSocket API for the Tauri app, tools and routing."
 requires-python = ">=3.14"
 dependencies = [
