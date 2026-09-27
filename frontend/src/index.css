@@ -22,34 +22,39 @@ body,
 }
 
 .app {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   height: 100dvh;
 }
 
+/* Overlay bar: the default screen gets the whole display (spike #133). */
 .app-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-height: 3.5rem;
-  padding: 0 1rem;
-  border-bottom: 1px solid #1e293b;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  pointer-events: none;
+}
+
+.app-header > * {
+  pointer-events: auto;
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1rem;
+  color: #64748b;
 }
 
 .app-version {
-  font-size: 0.875rem;
-  color: #94a3b8;
+  font-size: 0.75rem;
+  color: #475569;
 }
 
 .app-main {
-  flex: 1;
-  overflow: auto;
-  padding: 1rem;
+  height: 100%;
 }
 
 .connection {
