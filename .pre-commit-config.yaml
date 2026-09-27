@@ -118,3 +118,11 @@ repos:
         files: ^scripts/deploy/(remote-agent|remote-app|remote-state|test_remote_deploy)\.sh$
         pass_filenames: false
         stages: [pre-push]
+
+      - id: pi-setup-test
+        name: Pi setup script tests
+        language: system
+        entry: scripts/pi/test_setup.sh
+        files: ^(scripts/pi/|scripts/deploy/jarvis-install-app$|deploy/pi/docker-compose\.yml$)
+        pass_filenames: false
+        stages: [pre-push]
