@@ -233,6 +233,9 @@ check "/var/log/jarvis is 2775 (setgid)" mode /var/log/jarvis 2775
 check "operator (app user) in jarvis-log" grep -qw jarvis-log "$S/groups.pi"
 check "deploy user not in jarvis-log" bash -c "! grep -qw jarvis-log '$S/groups.deploy'"
 check "app launch env: JARVIS_LOG_DIR" has /etc/environment.d/60-jarvis-logs.conf "JARVIS_LOG_DIR=/var/log/jarvis"
+check "app autostarts full screen" has /etc/xdg/autostart/jarvis.desktop "Exec=/usr/bin/jarvis-app --fullscreen"
+check "autostart waits for the app" has /etc/xdg/autostart/jarvis.desktop "TryExec=/usr/bin/jarvis-app"
+check "autostart entry 644" mode /etc/xdg/autostart/jarvis.desktop 644
 check "logger installed 644" mode /usr/local/lib/jarvis/log.sh 644
 check "logger folder 755" mode /usr/local/lib/jarvis 755
 check "logger is the repo copy" cmp -s "$src/scripts/lib/log.sh" "$R/usr/local/lib/jarvis/log.sh"

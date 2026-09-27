@@ -134,12 +134,27 @@ def log_files(folder: Path) -> list[LogFile]:
     return sorted(out, key=lambda f: (f.day, f.component, f.path.name))
 
 
+_warned: set[Path] = set()
+
+
+def warn_unreadable(path: Path, err: OSError) -> None:
+    """Say once per file why it's skipped; a missing group is the usual cause."""
+    if path in _warned:
+        return
+    _warned.add(path)
+    hint = ""
+    if isinstance(err, PermissionError):
+        hint = " (is your login in the jarvis-log group? `id` shows it; log out and back in)"
+    print(f"jarvis-logs: can't read {path}: {err.strerror}{hint}", file=sys.stderr)
+
+
 def read_records(f: LogFile) -> Iterator[Record]:
     """The file's records, read up to the size it had when listed (Follower takes over there)."""
     try:
         with open(f.path, "rb") as fh:
             data = fh.read(f.size)
-    except OSError:
+    except OSError as err:
+        warn_unreadable(f.path, err)
         return
     yield from parse(data.decode("utf-8", errors="replace").splitlines())
 
@@ -222,7 +237,8 @@ class Follower:
                 with open(f.path, "rb") as fh:
                     fh.seek(off)
                     data = fh.read()
-            except OSError:
+            except OSError as err:
+                warn_unreadable(f.path, err)
                 continue
             self.offsets[f.path] = off + len(data)
             text = self.partial.get(f.path, "") + data.decode("utf-8", errors="replace")

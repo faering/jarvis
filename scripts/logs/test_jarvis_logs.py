@@ -394,3 +394,23 @@ class Usage(TmpDir):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(os.geteuid() == 0, "root can read any file")
+class Unreadable(TmpDir):
+    def test_says_why_it_skips_a_file_and_reads_the_rest(self):
+        day = NOW.date().isoformat()
+        ok = line(f"{day} 10:00:00.000Z", "INFO ", "agent", "runtime", "agent ready")
+        self.write(f"jarvis-agent-{day}.log", ok)
+        secret = self.write(f"jarvis-app-{day}.log", ok.replace("agent]", "app]"))
+        secret.chmod(0)
+        jl._warned.clear()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc, out = self.run_cli("--since", "1d")
+            self.run_cli("--since", "1d")  # warned once per file
+        self.assertEqual(rc, 0)
+        self.assertIn("agent ready", out)
+        self.assertEqual(err.getvalue().count("can't read"), 1)
+        self.assertIn(f"jarvis-app-{day}.log", err.getvalue())
+        self.assertIn("jarvis-log group", err.getvalue())

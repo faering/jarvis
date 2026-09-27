@@ -346,6 +346,19 @@ ensure_file /etc/environment.d/60-jarvis-logs.conf 644 root:root <<EOF || :
 # $MARK (#126)
 JARVIS_LOG_DIR=$LOG_DIR
 EOF
+# A Jarvis device boots into Jarvis: the desktop session starts the app full screen at
+# login (XDG autostart; TryExec skips it until the first app deploy). #167
+ensure_file /etc/xdg/autostart/jarvis.desktop 644 root:root <<EOF || :
+# $MARK (#167)
+[Desktop Entry]
+Type=Application
+Name=Jarvis
+Comment=Start Jarvis full screen at login
+TryExec=/usr/bin/jarvis-app
+Exec=/usr/bin/jarvis-app --fullscreen
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
 # Root-owned: the root deploy scripts source the logger only if root owns it and its folder.
 ensure_dir /usr/local/lib/jarvis 755 root:root
 ensure_file /usr/local/lib/jarvis/log.sh 644 root:root <"$repo/scripts/lib/log.sh" || :
