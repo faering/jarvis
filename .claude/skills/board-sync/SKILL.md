@@ -22,7 +22,8 @@ mirror. Field value mapping and the work-item shape live in `_shared/issue-schem
 | Status | built-in single-select | Todo / In Progress / Done | issue `status:*` (see mapping) |
 | Item Type | single-select | Epic / Feature / Story / Task / Bug | issue `type:*` |
 | Priority | single-select | P0 / P1 / P2 / P3 | issue `prio:*` |
-| Sprint | iteration (14d) | — | assigned during planning |
+| Sprint | iteration (14d) | — | assigned during planning (`roadmap`) |
+| Start date / Target date | date | — | `roadmap` skill (start on `start-issue`, actual date on close) |
 
 Status label→field: `backlog`/`ready`→**Todo**, `in-progress`/`review`→**In Progress**,
 `done`→**Done** (the board keeps a coarse 3-state column; the 5-state truth is the label).
@@ -45,3 +46,5 @@ Status label→field: `backlog`/`ready`→**Todo**, `in-progress`/`review`→**I
 ## Notes
 - Setting **Status = Done** closes the issue (board workflow). Don't do it manually to
   "mark done" — let the closing PR drive it.
+- After syncing fields, run `roadmap sync`: closed items get their actual close date and
+  epics re-span their children.

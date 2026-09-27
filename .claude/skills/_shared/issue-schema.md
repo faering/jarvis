@@ -135,6 +135,8 @@ Envelope:
   "status": "backlog",                  // backlog|ready|in-progress|review|done
   "parent": null,                       // parent's localId or GitHub number
   "iteration": null,
+  "startDate": null,                    // YYYY-MM-DD, Project "Start date" (roadmap skill)
+  "targetDate": null,                   // YYYY-MM-DD, Project "Target date"; actual date once closed
   "labels": ["type:epic", "prio:P1", "status:backlog"],
   "archDecisions": ["…"],
 
