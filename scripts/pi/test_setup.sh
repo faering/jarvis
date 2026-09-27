@@ -76,6 +76,11 @@ stub usermod <<'EOF'
 u="${!#}"
 echo "$(cat "$STUB/groups.$u") $2" >"$STUB/groups.$u"
 EOF
+stub groupadd <<'EOF'
+#!/usr/bin/env bash
+echo "groupadd $*" >>"$STUB/calls"
+echo "${!#}:x:$2:" >>"$STUB/group"
+EOF
 stub gpasswd <<'EOF'
 #!/usr/bin/env bash
 tr ' ' '\n' <"$STUB/groups.$2" | grep -vx "$3" | paste -sd' ' >"$STUB/groups.$2.new"
@@ -112,8 +117,11 @@ EOF
 new_pi() { # new_pi <name>: sets R, S, REPO
   local d="$tmp/$1"
   R="$d/root" S="$d/stub" REPO="$d/repo"
-  mkdir -p "$R/etc" "$R/home/pi/.ssh" "$R/root" "$S/units" "$REPO/scripts/pi" "$REPO/scripts/deploy" "$REPO/deploy/pi"
+  mkdir -p "$R/etc" "$R/home/pi/.ssh" "$R/root" "$S/units" "$REPO/scripts/pi" "$REPO/scripts/deploy" "$REPO/deploy/pi" \
+    "$REPO/scripts/lib" "$REPO/scripts/logs"
   cp "$here/setup.sh" "$REPO/scripts/pi/"
+  cp "$src/scripts/lib/log.sh" "$REPO/scripts/lib/"
+  cp "$src/scripts/logs/jarvis-logs" "$REPO/scripts/logs/"
   cp "$src/scripts/deploy/jarvis-install-app" "$REPO/scripts/deploy/"
   cp "$src/deploy/pi/docker-compose.yml" "$REPO/deploy/pi/"
   echo 'VERSION_CODENAME=trixie' >"$R/etc/os-release"
@@ -219,6 +227,26 @@ check "history: root .bashrc sources it" grep -q "jarvis-history.sh; fi # jarvis
 hist="$(HOME="$R/home/pi" bash -ic "source '$R$f'; echo \$HISTSIZE \$HISTFILESIZE; source '$R$f'; echo \"\$PROMPT_COMMAND\"" 2>/dev/null)"
 check "history: applies in an interactive shell, PROMPT_COMMAND added once" \
   test "$hist" == "$(printf '50000 100000\nhistory -a')"
+check "log group jarvis-log with fixed GID 2750" grep -qx "jarvis-log:x:2750:" "$S/group"
+check "log group created with --gid" grep -q "groupadd --gid 2750 jarvis-log" "$S/calls"
+check "/var/log/jarvis is 2775 (setgid)" mode /var/log/jarvis 2775
+check "operator (app user) in jarvis-log" grep -qw jarvis-log "$S/groups.pi"
+check "deploy user not in jarvis-log" bash -c "! grep -qw jarvis-log '$S/groups.deploy'"
+check "app launch env: JARVIS_LOG_DIR" has /etc/environment.d/60-jarvis-logs.conf "JARVIS_LOG_DIR=/var/log/jarvis"
+check "logger installed 644" mode /usr/local/lib/jarvis/log.sh 644
+check "logger folder 755" mode /usr/local/lib/jarvis 755
+check "logger is the repo copy" cmp -s "$src/scripts/lib/log.sh" "$R/usr/local/lib/jarvis/log.sh"
+check "jarvis-logs installed 755" mode /usr/local/bin/jarvis-logs 755
+check "jarvis-logs is the repo copy" cmp -s "$src/scripts/logs/jarvis-logs" "$R/usr/local/bin/jarvis-logs"
+f=/etc/systemd/system/jarvis-logs-prune.service
+check "prune service runs jarvis-logs prune" has $f "ExecStart=/usr/local/bin/jarvis-logs prune --dir /var/log/jarvis"
+check "prune service: throwaway user" has $f "DynamicUser=yes"
+check "prune service: only the log folder is writable" has $f "ReadWritePaths=/var/log/jarvis"
+check "prune service: via the log group" has $f "SupplementaryGroups=jarvis-log"
+check "prune timer hourly" has /etc/systemd/system/jarvis-logs-prune.timer "OnCalendar=hourly"
+check "prune timer enabled" test "$(cat "$S/units/jarvis-logs-prune.timer")" == enabled
+check "systemd reloaded before enabling the timer" bash -c \
+  "grep -n 'systemctl' '$S/calls' | grep -A99 daemon-reload | grep -q 'enable --now jarvis-logs-prune.timer'"
 check "avahi disabled" test "$(cat "$S/units/avahi-daemon.service")" == disabled
 check "bluetooth kept" test "$(cat "$S/units/bluetooth.service")" == enabled
 check "docker enabled" test "$(cat "$S/units/docker.service")" == enabled
@@ -274,6 +302,13 @@ echo "deploy docker" >"$S/groups.deploy"
 mkdir -p "$R/home/deploy"
 run
 check "removed from docker group" bash -c "! grep -qw docker '$S/groups.deploy'"
+
+echo "jarvis-log with the wrong GID aborts"
+new_pi badgid
+echo "jarvis-log:x:1234:" >"$S/group"
+run
+check "fails" test "$rc" -eq 1
+check "says how to fix it" grep -q "groupmod -g 2750 jarvis-log" <<<"$out"
 
 echo "a download that isn't the pinned key aborts"
 new_pi badkey

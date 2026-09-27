@@ -10,7 +10,7 @@
 #
 # Idempotent: re-run it any time (e.g. after `git pull`) to converge the Pi again.
 # Exit: 0 done / no drift, 1 error or drift (--check), 3 applied but some steps deferred.
-# Guide: docs/pi-setup.md. Why each step: #131 (hardening) and #132 (setup).
+# Guide: docs/pi-setup.md. Why each step: #131 (hardening), #132 (setup), #126 (log files).
 #
 # Test hook: JARVIS_ROOT=<dir> prefixes every path read or written, so
 # scripts/pi/test_setup.sh can run it without root (commands stubbed on PATH).
@@ -21,6 +21,10 @@ set -euo pipefail
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
 DEPLOY_USER=deploy
+# Log files (docs/logging.md): the agent container joins the group by this fixed number.
+LOG_GROUP=jarvis-log
+LOG_GID=2750
+LOG_DIR=/var/log/jarvis
 # Unused on this device: mDNS (Tailscale MagicDNS replaces jarvis.local), printing, modems.
 UNUSED_UNITS=(avahi-daemon.service avahi-daemon.socket cups.service cups.socket cups.path
   cups-browsed.service ModemManager.service)
@@ -320,6 +324,70 @@ elif ! meta_ok "$(p /opt/jarvis/agent.env)" 600 root:root; then
     bash -c "chmod 600 \"\$1\"; ((\$2)) || chown root:root \"\$1\"" _ "$(p /opt/jarvis/agent.env)" "$fake"
 fi
 ensure_dir /var/lib/jarvis 700 root:root
+
+# ---- 4b. log files (docs/logging.md, ADR 0011) ---------------------------------------------
+section "log files"
+gid="$(getent group "$LOG_GROUP" | cut -d: -f3 || true)"
+if [[ -z "$gid" ]]; then
+  taken="$(getent group "$LOG_GID" | cut -d: -f1 || true)"
+  [[ -z "$taken" ]] || die "GID $LOG_GID is taken by group '$taken'; $LOG_GROUP needs it (compose group_add)"
+  act "create group $LOG_GROUP (GID $LOG_GID)" groupadd --gid "$LOG_GID" "$LOG_GROUP"
+elif [[ "$gid" != "$LOG_GID" ]]; then
+  die "group $LOG_GROUP has GID $gid, not $LOG_GID (compose group_add): sudo groupmod -g $LOG_GID $LOG_GROUP, then re-run"
+fi
+# setgid: every file created inside belongs to the group. Writers: the agent container
+# (group_add), the app (the operator runs the display session) and the root deploy scripts.
+ensure_dir "$LOG_DIR" 2775 "root:$LOG_GROUP"
+if ! in_group "$operator" "$LOG_GROUP"; then
+  act "add $operator to $LOG_GROUP (the app writes its log; log in again)" usermod -aG "$LOG_GROUP" "$operator"
+fi
+# The app reads its log folder from its launch environment (systemd user session).
+ensure_file /etc/environment.d/60-jarvis-logs.conf 644 root:root <<EOF || :
+# $MARK (#126)
+JARVIS_LOG_DIR=$LOG_DIR
+EOF
+# Root-owned: the root deploy scripts source the logger only if root owns it and its folder.
+ensure_dir /usr/local/lib/jarvis 755 root:root
+ensure_file /usr/local/lib/jarvis/log.sh 644 root:root <"$repo/scripts/lib/log.sh" || :
+ensure_file /usr/local/bin/jarvis-logs 755 root:root <"$repo/scripts/logs/jarvis-logs" || :
+units=0
+if ensure_file /etc/systemd/system/jarvis-logs-prune.service 644 root:root <<EOF; then units=1; fi
+# $MARK (#126)
+[Unit]
+Description=Prune Jarvis log files (older than 90 days, then down to the 20 GiB budget)
+Documentation=https://github.com/faering/jarvis/blob/main/docs/logging.md
+ConditionPathIsDirectory=$LOG_DIR
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jarvis-logs prune --dir $LOG_DIR
+# A throwaway user whose only write access is the log folder, through its group.
+DynamicUser=yes
+SupplementaryGroups=$LOG_GROUP
+ReadWritePaths=$LOG_DIR
+ProtectHome=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+Nice=10
+IOSchedulingClass=idle
+EOF
+if ensure_file /etc/systemd/system/jarvis-logs-prune.timer 644 root:root <<EOF; then units=1; fi
+# $MARK (#126)
+[Unit]
+Description=Prune Jarvis log files hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+((check || !units)) || systemctl daemon-reload
+if [[ "$(unit_state jarvis-logs-prune.timer)" != enabled ]]; then
+  act "enable jarvis-logs-prune.timer (hourly)" systemctl enable --now jarvis-logs-prune.timer
+fi
 
 # ---- 5. ssh hardening ----------------------------------------------------------------------
 section "ssh"
