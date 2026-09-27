@@ -16,14 +16,18 @@ reads via GraphQL with `GITHUB_PAT`).
 | `Start date` | DATE | work actually started (set by `start-issue`) or planned start |
 | `Target date` | DATE | planned finish; on close, the **actual** close date |
 | `Sprint` | iteration (14d) | the sprint the item lands in |
-| Milestone | repo milestone (one per issue), with a due date | the **outcome** the item delivers |
+| Milestone | repo milestone (one per issue), with a due date | the **Jarvis release** the item ships in |
 
 The Roadmap view must use Start/Target date for its bars and show milestones as markers:
 one-time UI settings (view menu → Date fields, and → Markers → Milestones); the API can't
 set them.
 
-**Milestones are outcomes you could demo** ("Jarvis lives on the Pi"), not phases or
-components. Each has a one-line description of the outcome and a due date.
+**One milestone = one Jarvis release** (#162): `Jarvis N: <outcome>` ("Jarvis 1: Lives on
+the Pi"), an outcome you could demo. The description holds the outcome, the codename once
+the user names it (a Marvel/DC superhero), and the component versions at release. Jarvis
+releases pin a tested set of independently released components (ADR 0004).
+The plan is **derived from the issues**, never hand-written: features/stories → Added,
+bugs → Fixed, `change:changed` / `change:deprecated` labels → Changed / Deprecated.
 
 ## Rules
 1. **Epics span their children:** start = earliest child start, target = latest child
@@ -56,6 +60,8 @@ components. Each has a one-line description of the outcome and a due date.
   then per epic, children with start → target, status, overdue/overrun flag.
 - **`milestones`** — list open milestones: due date, progress, overruns, items missing one.
 - **`milestone add <title> <due> <outcome>`** — propose, then create on OK.
+- **`plan-release <milestone>`** — the derived Added/Changed/Fixed/Deprecated list for a
+  milestone (open and closed issues), for review or release notes.
 
 ## How
 Read items with dates (GraphQL, `GITHUB_PAT`):
