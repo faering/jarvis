@@ -1,6 +1,6 @@
 ---
 name: roadmap
-description: Plan and keep the Jarvis Project roadmap current — set/shift Start date, Target date and Sprint on issues and epics, keep epics spanning their children, record actual dates on close, and show the timeline as text. Use when planning work, when asked "what's planned when", after closing or starting issues, or to reconcile the Roadmap view.
+description: Plan and keep the Jarvis Project roadmap current — set/shift Start date, Target date, Sprint and Milestone on issues and epics, check items against milestone due dates, keep epics spanning their children, record actual dates on close, and show the timeline as text. Use when planning work, when asked "what's planned when", after closing or starting issues, or to reconcile the Roadmap view.
 ---
 
 # roadmap
@@ -16,9 +16,14 @@ reads via GraphQL with `GITHUB_PAT`).
 | `Start date` | DATE | work actually started (set by `start-issue`) or planned start |
 | `Target date` | DATE | planned finish; on close, the **actual** close date |
 | `Sprint` | iteration (14d) | the sprint the item lands in |
+| Milestone | repo milestone (one per issue), with a due date | the **outcome** the item delivers |
 
-The Roadmap view must use Start/Target date for its bars: a one-time UI setting (view menu →
-Date fields); the API can't set it.
+The Roadmap view must use Start/Target date for its bars and show milestones as markers:
+one-time UI settings (view menu → Date fields, and → Markers → Milestones); the API can't
+set them.
+
+**Milestones are outcomes you could demo** ("Jarvis lives on the Pi"), not phases or
+components. Each has a one-line description of the outcome and a due date.
 
 ## Rules
 1. **Epics span their children:** start = earliest child start, target = latest child
@@ -35,13 +40,22 @@ Date fields); the API can't set it.
    (subagent batches ≈ one day of work each).
 6. **Overdue** open items (target < today): don't silently shift. Report them with a
    suggested new date and apply on OK — the slip itself is useful information.
+7. **Every open feature, story, task and bug has a milestone;** an epic gets one only when
+   all its open children share it (an issue holds one milestone). `new-issue` proposes one;
+   `start-issue` sets one if missing and says which.
+8. **Items fit their milestone:** a target date after the milestone's due date is an
+   **overrun**. Report it with two options (move the item to the next milestone, or move the
+   due date) and apply on OK. Never move a due date silently.
 
 ## Commands
-- **`sync`** — apply rules 1, 3 and report 6. Safe to run anytime; `board-sync` calls it.
+- **`sync`** — apply rules 1, 3 and report 6, 7 (items without a milestone) and 8.
+  Safe to run anytime; `board-sync` calls it.
 - **`plan <issues|epic>`** — rule 5.
 - **`shift <issue> <days|date>`** — move start/target, then re-run rule 1 for its epic.
-- **`show [epic|sprint]`** — text timeline: per epic, children with start → target, status,
-  overdue flag.
+- **`show [epic|sprint|milestone]`** — text timeline: per milestone (due date, closed/total),
+  then per epic, children with start → target, status, overdue/overrun flag.
+- **`milestones`** — list open milestones: due date, progress, overruns, items missing one.
+- **`milestone add <title> <due> <outcome>`** — propose, then create on OK.
 
 ## How
 Read items with dates (GraphQL, `GITHUB_PAT`):
@@ -51,14 +65,23 @@ GH_TOKEN=$GITHUB_PAT gh api graphql -f query='{user(login:"faering"){projectV2(n
   fieldValues(first:20){nodes{... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2FieldCommon{name}}}
   ... on ProjectV2ItemFieldIterationValue{title field{... on ProjectV2FieldCommon{name}}}}}}}}}}'
 ```
-(paginate with `after:` beyond 100 items). Parents come from the issue's sub-issue parent
+(paginate with `after:` beyond 100 items). Add `milestone{number title dueOn}` to the
+`... on Issue` fragment to read milestones. Parents come from the issue's sub-issue parent
 (`issue_read`) or the `Parent:` line in its body.
 
 Write dates in bulk with `projects_write update_project_items`
 (`updated_field {"name":"Start date","value":"YYYY-MM-DD"}`), grouping items per value
 (≤ 50 per call). Sprint: `{"name":"Sprint","value":"<iteration title>"}`.
 
-Mirror `startDate`/`targetDate` into `github-issues.json` (schema: `_shared/issue-schema.md`).
+Milestones (repo REST, the `gh` token is enough):
+```bash
+gh api repos/faering/jarvis/milestones -q '.[]|{number,title,due_on,open_issues,closed_issues}'
+gh api repos/faering/jarvis/milestones -f title='Jarvis lives on the Pi' \
+  -f due_on=2026-10-11T23:59:59Z -f description='<outcome, one line>'
+```
+Assign with MCP `issue_write update` (`milestone: <number>`).
+
+Mirror `startDate`/`targetDate`/`milestone` into `github-issues.json` (schema: `_shared/issue-schema.md`).
 
 ## Notes
 - Sparring applies here too: if a plan looks unrealistic (too much in one sprint, a P1
