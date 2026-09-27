@@ -14,6 +14,7 @@ To change one, add a new ADR that supersedes it and update the old one's status.
 | [0007](0007-layered-config-and-capabilities.md) | Layered config + profiles, probed hardware, capability manifests | Accepted |
 | [0008](0008-protocol-json-schema.md) | One JSON Schema is the agent↔app WebSocket contract | Accepted |
 | [0009](0009-least-privilege-deploy.md) | Least-privilege deploys: no docker group, root actions via two audited scripts | Accepted |
+| [0010](0010-presence-screen-catalogue.md) | Presence screens: a catalogue with one folder per screen, the face by default | Accepted |
 
 Template:
 
