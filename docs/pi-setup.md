@@ -1,40 +1,18 @@
 # Pi first-time setup
 
-Do this once on a fresh Pi to make it deployable from GitHub (`.github/workflows/deploy.yml`). Replace `<user>` with your Pi user
-and `<pi>` with the Pi's Tailscale name (step 2).
+`scripts/pi/setup.sh` sets up and hardens the Pi; this guide covers only what a script can't
+do (accounts, keys, secrets). `<user>` is your Pi login, `<pi>` the Pi's Tailscale name.
 
-## Why Tailscale
-GitHub runs deploys on its own servers, so they can't reach `jarvis.local` or a home/office IP
-(both only work on your local network, and IPs change between Wi-Fi networks). Tailscale gives
-the Pi one fixed name, e.g. `jarvis.tail1234.ts.net`, that works on any network. The deploy job
-joins your tailnet for a few minutes (step 3) and SSHes to that name.
+**Why Tailscale:** GitHub's runners can't reach `jarvis.local` or a home/office IP. Tailscale
+gives the Pi one fixed name (e.g. `jarvis.tail1234.ts.net`) on any network; the deploy job
+joins your tailnet for a few minutes and SSHes to it. SSH is only open over Tailscale.
 
-## 1. Prepare the Pi
-Raspberry Pi OS **64-bit, Trixie or newer**, with **SSH enabled**: Raspberry Pi Imager →
-OS customisation → Services → Enable SSH, or on the Pi `sudo systemctl enable --now ssh`.
-Then, on the Pi:
-```sh
-curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker "$USER"   # Docker + Compose v2
-# App deploys install their .deb through this one root-owned script, not arbitrary apt-get.
-curl -fsSL https://raw.githubusercontent.com/faering/jarvis/main/scripts/deploy/jarvis-install-app -o /tmp/jarvis-install-app
-less /tmp/jarvis-install-app    # read it first (needs python3, which Pi OS ships): it only installs a package named jarvis from ~/jarvis/
-sudo install -o root -g root -m 755 /tmp/jarvis-install-app /usr/local/sbin/jarvis-install-app
-echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/jarvis-install-app" | sudo tee /etc/sudoers.d/jarvis-deploy
-sudo chmod 440 /etc/sudoers.d/jarvis-deploy
-mkdir -p ~/jarvis && touch ~/jarvis/.env      # runtime config (see .env.example)
-```
-Log out and in again so the `docker` group applies. The installed copy is root-owned and never
-updates itself; re-run the three installer lines to take a newer version.
-
-## 2. Put the Pi on Tailscale
-1. Create a free account at [tailscale.com](https://tailscale.com). Install Tailscale on your
-   work/dev PC too.
-2. Admin console → **DNS**: make sure **MagicDNS** is enabled (it is on new tailnets). The
-   `*.ts.net` names below depend on it.
-3. Admin console → **Access controls**: add two tags. Let **only you** reach the Pi, and let CI
-   reach it on SSH only. Replace `you@github` with your Tailscale login (top right of the admin
-   console). The default policy lets every tailnet member reach every device; replace it with
-   these grants if you ever invite anyone.
+## 1. Tailscale account
+1. Create a free account at [tailscale.com](https://tailscale.com) and install Tailscale on
+   your PC. Admin console → **DNS**: keep **MagicDNS** on.
+2. Admin console → **Access controls**: add the tags, let **only you** reach the Pi and CI
+   reach SSH only (`you@github` = your login, top right). Do this before step 3: the Pi
+   joins with `tag:jarvis`.
    ```json
    "tagOwners": { "tag:ci": ["autogroup:admin"], "tag:jarvis": ["autogroup:admin"] },
    "grants": [
@@ -42,56 +20,75 @@ updates itself; re-run the three installer lines to take a newer version.
      { "src": ["tag:ci"], "dst": ["tag:jarvis"], "ip": ["tcp:22"] }
    ]
    ```
-4. On the Pi: `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --advertise-tags=tag:jarvis`,
-   then open the printed link to add it. Tagged devices don't expire, so the Pi stays reachable.
-5. Its full name in the admin console (`<name>.<tailnet>.ts.net`) is `<pi>` in the steps
-   below. Check from your PC: `ssh <user>@<pi>`.
 
-## 3. Let GitHub join the tailnet
-Admin console → **Settings → Trust credentials** → new OAuth client with the **Auth Keys:
-Write** scope and tag `tag:ci` (defined in step 2). Keep the client ID and secret for step 5;
-they go in as a pair.
+## 2. Flash the Pi
+Raspberry Pi Imager: **Raspberry Pi OS 64-bit (Trixie or newer)**. In OS customisation set
+your user and Wi-Fi, and under Services **enable SSH with public-key authentication** (paste
+your PC's public key). The script refuses key-only SSH until your login has a key.
+
+## 3. Run the setup script
+On the Pi (keyboard or `ssh <user>@<pi-lan-ip>`):
+```sh
+git clone https://github.com/faering/jarvis.git ~/src/jarvis && cd ~/src/jarvis
+sudo scripts/pi/setup.sh          # prints a Tailscale login link on the first run: open it
+```
+It installs Docker, Tailscale, nftables and unattended-upgrades; creates the `deploy` user
+and root-owned deploy scripts, `/opt/jarvis/` and sudoers; hardens SSH; turns on the
+firewall; and sets up the journal, shell history and updates. Details are in the script.
+- Exit **3** = steps it deferred to keep you from being locked out (no SSH key yet,
+  Tailscale not up). It prints why; fix that and re-run.
+- **Re-run any time** (e.g. after `git pull`); `--check` reports drift and changes nothing.
+- After step 3, LAN SSH is closed: use `ssh <user>@<pi>`. The keyboard and screen always work.
+
+Check from your PC: `ssh <user>@<pi>`. The full name is in the admin console.
 
 ## 4. Deploy key and host key
-On your PC (on the tailnet):
+On your PC:
 ```sh
 ssh-keygen -t ed25519 -f jarvis-deploy -N "" -C github-deploy   # key pair only for deploys
-ssh-copy-id -i jarvis-deploy.pub <user>@<pi>
+scp jarvis-deploy.pub <user>@<pi>:
+ssh -t <user>@<pi> 'cd ~/src/jarvis && sudo scripts/pi/setup.sh --deploy-key ~/jarvis-deploy.pub'
 ssh-keyscan -t ed25519 <pi> > known_hosts                       # the Pi's host key
 ssh-keygen -lf known_hosts   # must match `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the Pi
 ```
+The key goes to root-owned `/etc/ssh/authorized_keys/deploy`, marked `restrict` (no
+forwarding, no terminal). `deploy` is not in the `docker` group; sudo lets it run only
+`jarvis-deploy-agent` and `jarvis-install-app`.
 
-## 5. Create the GitHub environment
-Repo **Settings → Environments → New environment** `pi`:
-- **Required reviewers:** you. Every rollout then waits for your approval.
-- **Environment secrets:**
+## 5. Let GitHub join the tailnet
+Admin console → **Settings → Trust credentials** → new OAuth client with the **Auth Keys:
+Write** scope and tag `tag:ci`. Keep the client ID and secret for step 6.
 
-  | Secret | Value |
-  |---|---|
-  | `PI_SSH_HOST` | `<pi>`: the full Tailscale name, not an IP |
-  | `PI_SSH_USER` | `<user>` |
-  | `PI_SSH_KEY` | contents of `jarvis-deploy` (the private key) |
-  | `PI_SSH_KNOWN_HOSTS` | contents of `known_hosts` |
-  | `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` | the OAuth client from step 3 |
+## 6. GitHub environment
+Repo **Settings → Environments → New environment** `pi`, **Required reviewers:** you, and
+these **environment secrets**:
+
+| Secret | Value |
+|---|---|
+| `PI_SSH_HOST` | `<pi>`: the full Tailscale name, not an IP |
+| `PI_SSH_USER` | `deploy` |
+| `PI_SSH_KEY` | contents of `jarvis-deploy` (the private key) |
+| `PI_SSH_KNOWN_HOSTS` | contents of `known_hosts` |
+| `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` | the OAuth client from step 5 |
 
 Then **Settings → Secrets and variables → Actions → Variables**: `PI_DEPLOY_ENABLED` = `true`.
 
-## 6. Container image access
-After the first `agent-v*` release, open the `jarvis-agent` package on GitHub → **Package
-settings** → make it **Public**. Or run `docker login ghcr.io` on the Pi with a PAT that has
-`read:packages`.
+## 7. Image access and test
+After the first `agent-v*` release, make the `jarvis-agent` package **Public** (package
+settings), or on the Pi `sudo docker login ghcr.io` with a `read:packages` PAT. Then
+**Actions → deploy → Run workflow**, pick `agent` and a version, and approve it.
 
-## 7. Test
-**Actions → deploy → Run workflow**, pick `agent` and a released version, and approve it.
-The log shows the tailnet join, the compatibility check and the health check.
-
-## Moving the Pi (home ↔ office)
-Nothing changes in GitHub: the Tailscale name follows the Pi. The Pi only needs internet on
-the new Wi-Fi. Add that network on the Pi first (`sudo nmtui`). Captive-portal networks won't
-work; company WPA2-Enterprise networks may need IT's details.
-
-## Reaching the Pi yourself
-- **[Raspberry Pi Connect](https://connect.raspberrypi.com)**: a browser shell or screen share
-  from any computer, over any network. Good for a quick look; it isn't used by deploys.
-- **Tailscale**: `ssh <user>@<pi>` or VS Code Remote-SSH from any PC on your tailnet, on any
-  network.
+## Day to day
+- **Agent config** (API keys, `JARVIS_*`, as in `.env.example`): `sudoedit /opt/jarvis/agent.env`.
+- **Logs** (journald, kept on disk, 500 MB / 1 month): `journalctl CONTAINER_NAME=jarvis-agent-1 -f`,
+  `journalctl -u docker`, last boot `journalctl -b -1`.
+- **Updates:** Debian, Pi and Tailscale updates install daily. If one needs a reboot
+  (kernel, libc), the Pi reboots at 04:00. Docker updates are manual: `sudo apt upgrade`.
+- **Bluetooth keyboard:** run `bluetoothctl`, then `power on`, `agent on`, `default-agent`,
+  `scan on`; put the keyboard in pairing mode, then `pair <MAC>` (type the PIN shown on the
+  keyboard + Enter), `trust <MAC>` (reconnects after reboots), `connect <MAC>`, `quit`.
+  If it's blocked: `sudo rfkill unblock bluetooth`.
+- **Moving networks:** nothing changes in GitHub. Add the new Wi-Fi first (`sudo nmtui`).
+  Captive portals won't work; WPA2-Enterprise may need IT's details.
+- **Reaching the Pi:** `ssh <user>@<pi>` or VS Code Remote-SSH from your tailnet, or
+  [Raspberry Pi Connect](https://connect.raspberrypi.com) in a browser (not used by deploys).
