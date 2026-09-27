@@ -9,7 +9,8 @@
 mod file;
 mod line;
 
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use log::kv::{Key, Value, VisitSource};
@@ -26,6 +27,18 @@ const WEBVIEW_TARGET: &str = "webview";
 /// This crate's module path, shown as `main` (its root) or stripped from sub-modules.
 const CRATE: &str = env!("CARGO_CRATE_NAME");
 
+/// The Pi's log folder (docs/logging.md), used when `JARVIS_LOG_DIR` isn't set.
+pub const DEFAULT_LOG_DIR: &str = "/var/log/jarvis";
+
+/// The log folder: `JARVIS_LOG_DIR` if set and not empty; otherwise the Pi's folder when
+/// it exists (a desktop launcher may not pass the session environment); otherwise none.
+pub fn resolve_dir(env: Option<OsString>, default: &Path) -> Option<PathBuf> {
+    match env.filter(|d| !d.is_empty()) {
+        Some(dir) => Some(PathBuf::from(dir)),
+        None => default.is_dir().then(|| default.to_path_buf()),
+    }
+}
+
 /// Settings read from the environment at startup.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -34,7 +47,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// `JARVIS_LOG_LEVEL` (default INFO) and `JARVIS_LOG_DIR` (unset/empty: no file).
+    /// `JARVIS_LOG_LEVEL` (default INFO) and the log folder (see [`resolve_dir`]).
     pub fn from_env() -> (Self, Option<String>) {
         let raw = std::env::var("JARVIS_LOG_LEVEL").unwrap_or_default();
         let (level, bad) = match Level::parse(&raw) {
@@ -42,9 +55,10 @@ impl Config {
             None if raw.trim().is_empty() => (Level::Info, None),
             None => (Level::Info, Some(raw)),
         };
-        let dir = std::env::var_os("JARVIS_LOG_DIR")
-            .filter(|d| !d.is_empty())
-            .map(PathBuf::from);
+        let dir = resolve_dir(
+            std::env::var_os("JARVIS_LOG_DIR"),
+            Path::new(DEFAULT_LOG_DIR),
+        );
         (Self { level, dir }, bad)
     }
 }
@@ -440,5 +454,18 @@ mod tests {
         assert_eq!(logger_name("jarvis_app::logging::file"), "logging.file");
         assert_eq!(logger_name("tao::event_loop"), "tao.event_loop");
         assert_eq!(logger_name("jarvis_apps"), "jarvis_apps");
+    }
+
+    #[test]
+    fn log_dir_prefers_the_env_then_an_existing_default() {
+        let tmp = std::env::temp_dir();
+        let missing = tmp.join("jarvis-no-such-dir");
+        assert_eq!(
+            resolve_dir(Some("/x".into()), &missing),
+            Some(PathBuf::from("/x"))
+        );
+        assert_eq!(resolve_dir(Some("".into()), &tmp), Some(tmp.clone()));
+        assert_eq!(resolve_dir(None, &tmp), Some(tmp.clone()));
+        assert_eq!(resolve_dir(None, &missing), None);
     }
 }
