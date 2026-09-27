@@ -73,3 +73,6 @@ flowchart LR
 - Root-owned on the Pi: runtime config `/opt/jarvis/agent.env` (600), agent state
   `/var/lib/jarvis/agent.env`. The app's state and `.deb`s stay in `~deploy/jarvis/`.
 - The root scripts and compose file change only when an admin re-runs the Pi setup.
+- Deploys log to `/var/log/jarvis/jarvis-deploy-<date>.log` (`jarvis-logs --component
+  deploy`) and stderr. The app's rollback decisions show only in the job output: `deploy` is
+  not in `jarvis-log`, so it can't write or delete logs.

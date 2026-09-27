@@ -34,7 +34,9 @@ sudo scripts/pi/setup.sh          # prints a Tailscale login link on the first r
 ```
 It installs Docker, Tailscale, nftables and unattended-upgrades; creates the `deploy` user
 and root-owned deploy scripts, `/opt/jarvis/` and sudoers; hardens SSH; turns on the
-firewall; and sets up the journal, shell history and updates. Details are in the script.
+firewall; sets up the journal, shell history and updates; and creates the log folder
+`/var/log/jarvis` (group `jarvis-log`, GID 2750, which your login joins), `jarvis-logs` and
+its hourly prune timer ([logging](logging.md)). Details are in the script.
 - Exit **3** = steps it deferred to keep you from being locked out (no SSH key yet,
   Tailscale not up). It prints why; fix that and re-run.
 - **Re-run any time** (e.g. after `git pull`); `--check` reports drift and changes nothing.
@@ -80,7 +82,12 @@ settings), or on the Pi `sudo docker login ghcr.io` with a `read:packages` PAT. 
 
 ## Day to day
 - **Agent config** (API keys, `JARVIS_*`, as in `.env.example`): `sudoedit /opt/jarvis/agent.env`.
-- **Logs** (journald, kept on disk, 500 MB / 1 month): `journalctl CONTAINER_NAME=jarvis-agent-1 -f`,
+- **Logs:** Jarvis's own logs are in `/var/log/jarvis` (90 days, 20 GiB); read them with
+  `jarvis-logs` ([logging](logging.md)): `jarvis-logs --since 1h`, `jarvis-logs -f`,
+  `jarvis-logs --turn <id>`, `jarvis-logs usage`. Pruning: `systemctl list-timers
+  jarvis-logs-prune.timer`, `journalctl -u jarvis-logs-prune`. Reading needs the
+  `jarvis-log` group: log in again after the first setup run.
+- **System logs** (journald, kept on disk, 500 MB / 1 month): `journalctl CONTAINER_NAME=jarvis-agent-1 -f`,
   `journalctl -u docker`, last boot `journalctl -b -1`.
 - **Updates:** Debian, Pi and Tailscale updates install daily. If one needs a reboot
   (kernel, libc), the Pi reboots at 04:00. Docker updates are manual: `sudo apt upgrade`.
