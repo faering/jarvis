@@ -20,8 +20,8 @@ The full spec is [docs/logging.md](../logging.md). In short:
   per component per UTC day; `jarvis-logs` merges them for reading.
 - **Correlation:** a W3C trace id per voice turn or request, created by the agent and sent
   to the app over the WebSocket; lines show its 8-char prefix.
-- **Budget:** 30 days, 1 GiB for the folder, 50 MiB per component per day; hourly pruning;
-  the agent alerts you at 80%.
+- **Budget:** 90 days, 20 GiB for the folder, 500 MiB per component per day (generous
+  on a 256 GB card); hourly pruning; the agent alerts you at 80%.
 - **Libraries:** Python's standard `logging` (no structlog), the Tauri log plugin for the
   app, a shared `log` function for bash.
 
@@ -49,4 +49,5 @@ The full spec is [docs/logging.md](../logging.md). In short:
 
 ## Revisit when
 - Faelab runs a collector: add an OTLP exporter (or a collector reading these files).
-- Disk or SD wear becomes a problem, or the budget alerts fire regularly.
+- `jarvis-logs usage` shows real volumes (set the budget from data), disk or SD wear
+  becomes a problem, or the budget alerts fire regularly.

@@ -34,6 +34,9 @@ so a collector can ingest the files later. Decision: [ADR 0011](adr/0011-log-for
 
 ### Examples
 
+[`logging-examples.log`](logging-examples.log) is the shared test fixture: every writer's
+formatter and the `jarvis-logs` parser are tested against it. Extend it with any new edge case.
+
 ```
 [2026-09-27 15:44:38.101Z] [INFO ] [agent] [voice.loop] [4bf92f35] turn started  trace_id=4bf92f3577b34da6a3ce929d0e0e4736 source=wake_word
 [2026-09-27 15:44:38.435Z] [DEBUG] [agent] [voice.stt] [4bf92f35] transcribed  duration_ms=312 chars=27
@@ -82,11 +85,13 @@ The text is always the OTel name (`WARN`, `FATAL`), never `WARNING` or `CRITICAL
   writes the same lines to stderr, so crashes before logging starts still reach the journal.
 - **Access:** the folder is `root:jarvis-log`, mode `2775`; files are `0640`. The agent
   container, the app's user and the deploy scripts write through the `jarvis-log` group.
-- **Retention:** 30 days.
-- **Budget:** 1 GiB for the folder; 50 MiB per component per day. At the daily cap a
+- **Retention:** 90 days.
+- **Budget:** 20 GiB for the folder; 500 MiB per component per day. Set generously on the
+  256 GB card so nothing useful is dropped; revisit once `jarvis-logs usage` shows real
+  daily and monthly volumes. At the daily cap a
   writer keeps only WARN and above and logs one ERROR saying so; at 110% it stops writing
   until the next day.
-- **Pruning:** `jarvis-logs prune` (hourly systemd timer) deletes files older than 30 days,
+- **Pruning:** `jarvis-logs prune` (hourly systemd timer) deletes files older than 90 days,
   then the oldest files until the folder is under budget.
 - **Watcher:** the agent checks the folder every minute. At **80%** of the folder budget,
   or of a component's daily cap, it logs a WARN and Jarvis tells you; it alerts again only
@@ -102,4 +107,5 @@ jarvis-logs --since 1h                      # everything from the last hour
 jarvis-logs --turn 4bf92f35                 # one turn, across agent and app
 jarvis-logs --level WARN --component agent  # WARN and above from the agent
 jarvis-logs -f                              # follow, like tail -f
+jarvis-logs usage                           # size per component per day and month, vs budget
 ```

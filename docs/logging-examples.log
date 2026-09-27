@@ -1,0 +1,15 @@
+[2026-09-27 15:44:38.000Z] [INFO ] [agent] [log] [--------] log opened  service.version=0.2.0 pid=1
+[2026-09-27 15:44:38.101Z] [INFO ] [agent] [voice.loop] [4bf92f35] turn started  trace_id=4bf92f3577b34da6a3ce929d0e0e4736 source=wake_word
+[2026-09-27 15:44:38.200Z] [TRACE] [agent] [voice.stt] [4bf92f35] heard text  text="what's the weather today?"
+[2026-09-27 15:44:38.435Z] [DEBUG] [agent] [voice.stt] [4bf92f35] transcribed  duration_ms=312 chars=27
+[2026-09-27 15:44:39.301Z] [WARN ] [agent] [routing] [4bf92f35] slow first token, falling back  backend=local latency_ms=2100
+[2026-09-27 15:44:39.310Z] [INFO ] [app] [presence] [4bf92f35] state changed  state=thinking
+[2026-09-27 15:44:39.500Z] [INFO ] [agent] [routing] [4bf92f35] reply ready\nsecond line kept on one line  note="has \"quotes\" and a \\ backslash" empty=""
+[2026-09-27 15:44:40.002Z] [ERROR] [agent] [speech.tts] [4bf92f35] synthesis failed  error.type=TimeoutError
+    at jarvis_agent/speech/tts.py:88 in synthesize
+    Traceback (most recent call last):
+      File "jarvis_agent/speech/tts.py", line 88, in synthesize
+    TimeoutError: speaches did not answer in 5.0s
+[2026-09-27 16:02:11.740Z] [WARN ] [deploy] [rollback] [--------] health check failed, rolling back  attempt=2
+[2026-09-27 16:02:12.000Z] [FATAL] [app] [main] [--------] cannot start: display not found
+    at src-tauri/src/main.rs:42 in main
