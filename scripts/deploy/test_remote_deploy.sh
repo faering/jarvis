@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests for scripts/deploy/remote-{agent,app}.sh against stubbed docker / apt / dpkg.
+# Tests for the Pi deploy scripts (jarvis-deploy-agent, remote-{app,state}.sh,
+# jarvis-install-app) against stubbed docker / sudo / apt / dpkg.
 # Usage: scripts/deploy/test_remote_deploy.sh   (exits non-zero on any failure)
 set -euo pipefail
 
@@ -10,9 +11,10 @@ bin="$tmp/bin"
 mkdir -p "$bin"
 
 # docker: one fake "agent" container whose tag/version come from the compose env file.
-# A tag starting with "bad" never turns healthy.
+# A tag listed in $STUB/bad never turns healthy. Every call is logged to $STUB/docker.log.
 cat >"$bin/docker" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "${*%%$'\n'*}" >>"$STUB/docker.log" # first line only (exec's script)
 run="$STUB/running.env"
 case "$1" in
   network) exit 0 ;;
@@ -30,7 +32,7 @@ case "$1" in
   inspect)
     tag="$(sed -n 's/^AGENT_IMAGE_TAG=//p' "$run")"
     if [[ "$3" == *Health* ]]; then
-      [[ "$tag" == bad* ]] && echo unhealthy || echo healthy
+      grep -qxF "$tag" "$STUB/bad" 2>/dev/null && echo unhealthy || echo healthy
     else
       sed -n 's/^VERSION=//p' "$run"
     fi
@@ -43,18 +45,26 @@ cat >"$bin/dpkg-deb" <<'EOF'
 #!/usr/bin/env bash
 sed -n "s/^$3=//p" "$2"
 EOF
+# sudo: only `sudo -n` and only the two sudoers-allowed root scripts; SUDO_FAIL=1 = no sudoers.
 cat >"$bin/sudo" <<'EOF'
 #!/usr/bin/env bash
-deb="${!#}"
-grep -q '^FAIL=1' "$deb" && exit 1
-sed -n 's/^Version=//p' "$deb" >"$STUB/installed"
+[[ "$1" == -n && -z "${SUDO_FAIL:-}" ]] || exit 1
+case "$2" in
+  /usr/local/sbin/jarvis-deploy-agent) exec bash "$HERE/jarvis-deploy-agent" "${@:3}" ;;
+  /usr/local/sbin/jarvis-install-app)
+    deb="${!#}"
+    grep -q '^FAIL=1' "$deb" && exit 1
+    sed -n 's/^Version=//p' "$deb" >"$STUB/installed"
+    ;;
+  *) exit 1 ;;
+esac
 EOF
 cat >"$bin/dpkg-query" <<'EOF'
 #!/usr/bin/env bash
 [[ -s "$STUB/installed" ]] && echo "install ok installed $(cat "$STUB/installed")"
 EOF
 chmod +x "$bin"/*
-export PATH="$bin:$PATH" AGENT_HEALTH_TIMEOUT=5
+export PATH="$bin:$PATH" AGENT_HEALTH_TIMEOUT=5 HERE="$here"
 
 pass=0
 fail=0
@@ -69,34 +79,98 @@ ok() { # ok <name> <condition...>
     echo "FAIL - $name"
   fi
 }
-fresh() { # fresh pi dir + stub state
-  export JARVIS_DIR="$tmp/pi/$1" STUB="$tmp/stub/$1"
-  mkdir -p "$JARVIS_DIR/incoming" "$STUB"
-  touch "$JARVIS_DIR/docker-compose.yml"
+fresh() { # fresh pi dirs + stub state: ~deploy/jarvis, /opt/jarvis, /var/lib/jarvis
+  local root="$tmp/pi/$1"
+  export JARVIS_DIR="$root/home/jarvis" STUB="$tmp/stub/$1" \
+    JARVIS_OPT_DIR="$root/opt/jarvis" JARVIS_STATE_DIR="$root/var/lib/jarvis"
+  mkdir -p "$JARVIS_DIR/incoming" "$STUB" "$JARVIS_OPT_DIR"
+  chmod 755 "$JARVIS_OPT_DIR"
+  install -m 644 /dev/null "$JARVIS_OPT_DIR/docker-compose.yml"
 }
-agent() { bash "$here/remote-agent.sh" "$1" "$2" 0 >/dev/null 2>&1; }
+# As deploy.yml runs it: ssh pi sudo -n /usr/local/sbin/jarvis-deploy-agent deploy ...
+agent() { sudo -n /usr/local/sbin/jarvis-deploy-agent deploy "$1" "$2" 0 >/dev/null 2>&1; }
 app() { bash "$here/remote-app.sh" "$1" "$2" 0 >/dev/null 2>&1; }
 deb() { # deb <path> <version> [fail]
   printf 'Package=jarvis\nVersion=%s\nFAIL=%s\n' "$2" "${3:-0}" >"$1"
 }
 not() { ! "$@"; }
 has() { grep -q "^$2=$3\$" "$1" 2>/dev/null; }
+pulled() { grep -q ' pull ' "$STUB/docker.log" 2>/dev/null; }
 
-# --- agent ---
+# --- agent (jarvis-deploy-agent, via the sudo stub) ---
 fresh agent-first-ok
-ok "agent: first deploy succeeds" agent t1 1.0.0
-ok "agent: first deploy records state" has "$JARVIS_DIR/state/agent.env" AGENT_IMAGE_TAG t1
+ok "agent: first deploy succeeds" agent 1.0.0 1.0.0
+ok "agent: first deploy records state" has "$JARVIS_STATE_DIR/agent.env" AGENT_IMAGE_TAG 1.0.0
+ok "agent: runs only the root-owned compose file" \
+  grep -q -- "-f $JARVIS_OPT_DIR/docker-compose.yml --env-file $JARVIS_STATE_DIR/" "$STUB/docker.log"
+ok "agent: every compose call uses it" \
+  not grep -v -e "-f $JARVIS_OPT_DIR/docker-compose.yml" -e '^network ' -e '^inspect ' -e '^exec ' "$STUB/docker.log"
+ok "agent: nothing under the deploy user's home reaches docker" not grep -q "$JARVIS_DIR" "$STUB/docker.log"
+ok "agent: upgrade succeeds" agent 1.1.0 1.1.0
+ok "agent: upgrade records the previous tag" has "$JARVIS_STATE_DIR/agent.env" PREVIOUS_IMAGE_TAG 1.0.0
+ok "agent: dev build tag matching its version" agent 1.2.0-3-gabc1234-dirty 1.2.0+3.gabc1234.dirty
 
 fresh agent-first-bad
-ok "agent: failed first deploy exits non-zero" not agent bad1 1.0.0
+echo 1.0.0 >"$STUB/bad"
+ok "agent: failed first deploy exits non-zero" not agent 1.0.0 1.0.0
 ok "agent: failed first deploy leaves no agent running" test ! -e "$STUB/running.env"
-ok "agent: failed first deploy writes no state" test ! -e "$JARVIS_DIR/state/agent.env"
+ok "agent: failed first deploy writes no state" test ! -e "$JARVIS_STATE_DIR/agent.env"
 
 fresh agent-rollback
-agent t1 1.0.0
-ok "agent: failed upgrade exits non-zero" not agent bad2 2.0.0
-ok "agent: failed upgrade rolls back" has "$STUB/running.env" AGENT_IMAGE_TAG t1
-ok "agent: failed upgrade keeps state" has "$JARVIS_DIR/state/agent.env" AGENT_IMAGE_TAG t1
+agent 1.0.0 1.0.0
+echo 2.0.0 >"$STUB/bad"
+ok "agent: failed upgrade exits non-zero" not agent 2.0.0 2.0.0
+ok "agent: failed upgrade rolls back" has "$STUB/running.env" AGENT_IMAGE_TAG 1.0.0
+ok "agent: failed upgrade keeps state" has "$JARVIS_STATE_DIR/agent.env" AGENT_IMAGE_TAG 1.0.0
+
+fresh agent-validate
+for t in x/y a:b ../ ../../etc '' '1.0.0 x' 1.0.0:latest ghcr.io/evil/x:1.0.0 1.0.0/../x \
+  latest -1.0.0 1.0 $'1.0.0\nx' '1.0.0;id' 1.0.0-dirty; do
+  ok "agent: refuses tag '${t//$'\n'/\\n}'" not agent "$t" 1.0.0
+done
+ok "agent: refuses a tag that isn't its version's" not agent 1.0.1 1.0.0
+ok "agent: refuses a malformed version" not agent 1.0.0 '1.0.0 x'
+ok "agent: refuses a malformed protocol" \
+  not sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 '1;x' 2>/dev/null
+ok "agent: refuses extra arguments" \
+  not sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 0 x 2>/dev/null
+ok "agent: refuses an unknown subcommand" not sudo -n /usr/local/sbin/jarvis-deploy-agent rollback 2>/dev/null
+ok "agent: refused tags never reach docker" not pulled
+chmod g+w "$JARVIS_OPT_DIR/docker-compose.yml"
+ok "agent: refuses a group-writable compose file" not agent 1.0.0 1.0.0
+chmod g-w "$JARVIS_OPT_DIR/docker-compose.yml" && chmod o+w "$JARVIS_OPT_DIR"
+ok "agent: refuses a world-writable /opt/jarvis" not agent 1.0.0 1.0.0
+chmod o-w "$JARVIS_OPT_DIR" && mv "$JARVIS_OPT_DIR/docker-compose.yml" "$tmp/elsewhere.yml"
+ln -s "$tmp/elsewhere.yml" "$JARVIS_OPT_DIR/docker-compose.yml"
+ok "agent: refuses a symlinked compose file" not agent 1.0.0 1.0.0
+rm "$JARVIS_OPT_DIR/docker-compose.yml"
+ok "agent: refuses a missing compose file" not agent 1.0.0 1.0.0
+ok "agent: never pulled from an untrusted setup" not pulled
+install -m 644 /dev/null "$JARVIS_OPT_DIR/docker-compose.yml"
+mkdir -p "$JARVIS_STATE_DIR"
+exec 8>"$JARVIS_STATE_DIR/deploy.lock"
+flock 8
+ok "agent: refuses to run next to another deploy" not agent 1.0.0 1.0.0
+exec 8>&-
+ok "agent: deploys once the lock is free" agent 1.0.0 1.0.0
+
+# --- deploy state (the compat gate reads it) ---
+fresh state
+ok "state: empty before the first deploy" test -z "$(sudo -n /usr/local/sbin/jarvis-deploy-agent state)"
+ok "remote-state: agent empty before the first deploy" test -z "$(bash "$here/remote-state.sh" agent)"
+agent 1.0.0 1.0.0
+ok "state: prints the deployed tag" grep -qx AGENT_IMAGE_TAG=1.0.0 \
+  <(sudo -n /usr/local/sbin/jarvis-deploy-agent state)
+ok "remote-state: agent prints only VERSION + PROTOCOL" \
+  test "$(bash "$here/remote-state.sh" agent)" == $'VERSION=1.0.0\nPROTOCOL=0'
+ok "remote-state: fails when sudo isn't set up" not env SUDO_FAIL=1 bash "$here/remote-state.sh" agent
+ok "remote-state: app empty before the first deploy" test -z "$(bash "$here/remote-state.sh" app)"
+
+# --- deploy.yml no longer ships a compose file or runs docker as the deploy user ---
+wf="$here/../../.github/workflows/deploy.yml"
+ok "deploy.yml: no compose file upload" not grep -q 'docker-compose' "$wf"
+ok "deploy.yml: agent rollout goes through the root script" \
+  grep -q 'sudo -n /usr/local/sbin/jarvis-deploy-agent deploy' "$wf"
 
 # --- app ---
 fresh app
