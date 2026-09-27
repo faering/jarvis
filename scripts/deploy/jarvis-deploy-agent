@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# Root-owned agent rollout. The Pi setup installs it as /usr/local/sbin/jarvis-deploy-agent
+# (root:root 755), and sudoers lets the `deploy` user run ONLY this and jarvis-install-app,
+# so the deploy SSH key needs no `docker` group (which is root-equivalent). It pulls only
+# ghcr.io/faering/jarvis-agent:<tag> and runs only the root-owned compose file below.
+#
+# Usage:  sudo -n /usr/local/sbin/jarvis-deploy-agent deploy <docker-tag> <expected-version> <protocol>
+#         sudo -n /usr/local/sbin/jarvis-deploy-agent state     # KEY=VALUE, empty if never deployed
+# Files:  /opt/jarvis/docker-compose.yml  root-owned compose file (from deploy/pi/)
+#         /opt/jarvis/agent.env           root-owned runtime config (JARVIS_*, API keys)
+#         /var/lib/jarvis/agent.env       deploy state; compose --env-file, pins AGENT_IMAGE_TAG
+# On failure it rolls back to the previous tag; a failed first deploy removes the agent.
+set -euo pipefail
+
+# Test hooks only; never honoured as root (sudo also resets the environment).
+if [[ $EUID -eq 0 ]]; then
+  unset JARVIS_OPT_DIR JARVIS_STATE_DIR AGENT_HEALTH_TIMEOUT
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+fi
+opt="${JARVIS_OPT_DIR:-/opt/jarvis}"
+state_dir="${JARVIS_STATE_DIR:-/var/lib/jarvis}"
+timeout="${AGENT_HEALTH_TIMEOUT:-120}"
+compose_file="$opt/docker-compose.yml"
+state="$state_dir/agent.env"
+next="$state_dir/agent.env.next"
+
+# Release/dev DOCKER_TAG and CANONICAL grammars from scripts/version.sh; nothing else passes.
+tag_re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+-g[0-9a-f]{4,40}(-dirty)?)?$'
+version_re='^[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+\.g[0-9a-f]{4,40}(\.dirty)?)?$'
+protocol_re='^([0-9]+|none)$'
+
+log() { echo "[agent-deploy] $*"; }
+die() {
+  log "$*" >&2
+  exit 1
+}
+usage() {
+  echo "usage: $(basename "$0") deploy <docker-tag> <expected-version> <protocol> | state" >&2
+  exit 2
+}
+state_get() { [[ -f "$1" ]] && sed -n "s/^$2=//p" "$1" | tail -n1 || true; }
+
+# Refuse a file or directory that someone other than root (or, in tests, the caller) could
+# have written: a deploy-user-writable compose file would control the container's mounts.
+trusted() { # trusted <path>
+  local owner mode
+  [[ -e "$1" && ! -L "$1" ]] || die "missing or symlinked: $1 (run the Pi setup)"
+  read -r owner mode < <(stat -c '%u %a' "$1")
+  [[ "$owner" == 0 || "$owner" == "$EUID" ]] || die "refusing $1: owned by uid $owner, not root"
+  (((8#$mode & 8#022) == 0)) || die "refusing $1: group/world-writable (mode $mode)"
+}
+
+compose() { # compose <env-file> <args...>
+  local env="$1"
+  shift
+  docker compose --project-directory "$opt" -f "$compose_file" --env-file "$env" "$@"
+}
+
+# Healthy container + OCI version label (+ /version, once the agent serves it) == expected.
+verify() { # verify <env-file> <expected-version>
+  local env="$1" want="$2" cid health label reported deadline=$((SECONDS + timeout))
+  while :; do
+    cid="$(compose "$env" ps -q agent)"
+    health="$([[ -n "$cid" ]] && docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" || echo missing)"
+    case "$health" in
+      healthy) break ;;
+      unhealthy)
+        log "container is unhealthy"
+        return 1
+        ;;
+    esac
+    if ((SECONDS >= deadline)); then
+      log "not healthy after ${timeout}s (status: $health)"
+      return 1
+    fi
+    sleep 2
+  done
+  label="$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$cid")"
+  if [[ "$label" != "$want" ]]; then
+    log "image version label is '$label', expected '$want'"
+    return 1
+  fi
+  # /version lands with #28; until then a 404 just skips this check.
+  # Print only the JSON "version" field, so the comparison below is exact.
+  reported="$(docker exec "$cid" python -c '
+import json, sys, urllib.error, urllib.request
+try:
+    body = urllib.request.urlopen("http://127.0.0.1:8000/version", timeout=3).read()
+except urllib.error.HTTPError as e:
+    sys.exit(0 if e.code == 404 else 1)
+print(json.loads(body)["version"])
+')" || {
+    log "/version request failed or returned no version field"
+    return 1
+  }
+  if [[ -n "$reported" && "$reported" != "$want" ]]; then
+    log "/version reports version '$reported', expected '$want'"
+    return 1
+  fi
+  log "healthy, version $want"
+}
+
+cmd_state() {
+  [[ -f "$state" ]] || exit 0
+  grep -E '^[A-Z_]+=' "$state" || true
+}
+
+cmd_deploy() { # cmd_deploy <docker-tag> <expected-version> <protocol>
+  local tag="$1" expected="$2" protocol="$3" prev_tag prev_version
+  [[ "$tag" =~ $tag_re ]] || die "refusing tag '$tag': not a DOCKER_TAG (scripts/version.sh)"
+  [[ "$expected" =~ $version_re ]] || die "refusing version '$expected': not a canonical version"
+  [[ "$protocol" =~ $protocol_re ]] || die "refusing protocol '$protocol': not an integer or 'none'"
+  # The tag is the version's Docker form (1.2.3+4.gabc.dirty -> 1.2.3-4-gabc-dirty).
+  local want_tag="${expected/+/-}"
+  want_tag="${want_tag/.g/-g}"
+  want_tag="${want_tag/.dirty/-dirty}"
+  [[ "$tag" == "$want_tag" ]] || die "refusing tag '$tag': version $expected ships as '$want_tag'"
+
+  trusted "$opt"
+  trusted "$compose_file"
+  [[ ! -e "$opt/agent.env" ]] || trusted "$opt/agent.env"
+  install -d -m 755 "$state_dir"
+  trusted "$state_dir"
+  exec 9>"$state_dir/deploy.lock"
+  flock -n 9 || die "another agent deploy is running"
+
+  docker network inspect jarvis-net >/dev/null 2>&1 || docker network create jarvis-net >/dev/null
+
+  prev_tag="$(state_get "$state" AGENT_IMAGE_TAG)"
+  prev_version="$(state_get "$state" VERSION)"
+  if [[ -n "$prev_tag" && ! "$prev_tag" =~ $tag_re ]]; then
+    log "ignoring malformed previous tag '$prev_tag' in $state"
+    prev_tag=""
+  fi
+  (
+    umask 022
+    cat >"$next" <<EOF
+AGENT_IMAGE_TAG=$tag
+VERSION=$expected
+PROTOCOL=$protocol
+PREVIOUS_IMAGE_TAG=$prev_tag
+PREVIOUS_VERSION=$prev_version
+DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+EOF
+  )
+
+  log "deploying ghcr.io/faering/jarvis-agent:$tag (previous: ${prev_tag:-none})"
+  if compose "$next" pull agent && compose "$next" up -d agent && verify "$next" "$expected"; then
+    mv -f "$next" "$state"
+    log "deployed agent $expected"
+    exit 0
+  fi
+
+  if [[ -z "$prev_tag" ]]; then
+    # First deploy: nothing to roll back to. Don't leave a broken agent running
+    # (restart: unless-stopped would keep restarting it).
+    log "FAILED and there is no previous release to roll back to; removing the agent"
+    compose "$next" rm -s -f agent || log "could not remove the failed agent container"
+    rm -f "$next"
+    exit 1
+  fi
+  rm -f "$next"
+  log "FAILED; rolling back to $prev_tag"
+  if compose "$state" up -d agent && verify "$state" "$prev_version"; then
+    log "rolled back to agent $prev_version"
+  else
+    log "ROLLBACK FAILED too; the agent needs manual attention"
+  fi
+  exit 1
+}
+
+case "${1:-}" in
+  deploy)
+    [[ $# -eq 4 ]] || usage
+    cmd_deploy "$2" "$3" "$4"
+    ;;
+  state)
+    [[ $# -eq 1 ]] || usage
+    cmd_state
+    ;;
+  *) usage ;;
+esac
