@@ -85,7 +85,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
     steps:
-      # Default branch: the current deploy scripts, compose file and compatibility.json.
+      # Default branch: the current deploy scripts and compatibility.json. The root-owned
+      # jarvis-deploy-agent, jarvis-install-app and compose file on the Pi come from its
+      # setup (docs/pi-setup.md), never from this job.
       - uses: actions/checkout@v7
 
       - name: require SSH secrets
@@ -132,9 +134,17 @@ jobs:
             echo "::error::release/manifest.json does not describe $COMPONENT $VERSION."
             exit 1
           }
+          docker_tag="$(jq -r .docker_tag release/manifest.json)"
+          protocol="$(jq -r .protocol release/manifest.json)"
+          # Both end up in a remote command line: accept only their grammars (the Pi re-checks).
+          if [[ ! "$docker_tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+-g[0-9a-f]+(-dirty)?)?$ \
+            || ! "$protocol" =~ ^([0-9]+|none)$ ]]; then
+            echo "::error::release/manifest.json has a malformed docker_tag or protocol."
+            exit 1
+          fi
           {
-            echo "DOCKER_TAG=$(jq -r .docker_tag release/manifest.json)"
-            echo "PROTOCOL=$(jq -r .protocol release/manifest.json)"
+            echo "DOCKER_TAG=$docker_tag"
+            echo "PROTOCOL=$protocol"
           } >> "$GITHUB_ENV"
 
       - name: ssh setup
@@ -162,6 +172,11 @@ jobs:
             ServerAliveInterval 15
           EOF
           ssh pi 'mkdir -p jarvis/app jarvis/incoming jarvis/state && uname -m'
+          # The deploy key must not be root-equivalent: refuse a deploy user in the docker group.
+          if ssh pi 'id -nG' | tr ' ' '\n' | grep -qx docker; then
+            echo "::error::$USER_ on the Pi is in the docker group (root-equivalent); remove it (docs/pi-setup.md)."
+            exit 1
+          fi
 
       - name: compatibility gate (vs. the other component on the Pi)
         run: |
@@ -176,8 +191,8 @@ jobs:
       - name: roll out agent
         if: env.COMPONENT == 'agent'
         run: |
-          scp deploy/pi/docker-compose.yml pi:jarvis/docker-compose.yml
-          ssh pi bash -s -- "$DOCKER_TAG" "$VERSION" "$PROTOCOL" < scripts/deploy/remote-agent.sh
+          # Root-owned script; sudoers allows the deploy user only it and jarvis-install-app.
+          ssh pi sudo -n /usr/local/sbin/jarvis-deploy-agent deploy "$DOCKER_TAG" "$VERSION" "$PROTOCOL"
 
       - name: roll out app
         if: env.COMPONENT == 'app'
@@ -194,6 +209,6 @@ jobs:
           {
             echo "### Pi deploy: $COMPONENT $VERSION (${{ job.status }})"
             echo '```'
-            ssh pi 'tail -n +1 jarvis/state/agent.env jarvis/state/app.env' 2>/dev/null || true
+            ssh pi 'sudo -n /usr/local/sbin/jarvis-deploy-agent state; tail -n +1 jarvis/state/app.env' 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
