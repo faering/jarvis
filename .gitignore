@@ -44,3 +44,7 @@ models/store/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Local log files (JARVIS_LOG_DIR=logs in dev; docs/logging.md)
+/logs/
+/agent/logs/
