@@ -56,8 +56,8 @@ Every work item has:
 - **status** — one of the statuses above.
 - **parent** — parent issue number, or `null` for a top-level Epic.
 - **iteration** — sprint/iteration name, or `null`.
-- **milestone** — the outcome milestone it delivers (native GitHub milestone), or `null`
-  for epics that span several (see the `roadmap` skill).
+- **milestone** — the Jarvis release it ships in (native milestone, `Jarvis N: <outcome>`),
+  or `null` for epics that span several (see the `roadmap` skill).
 - **labels** — the resolved `type:*`/`prio:*`/`status:*` set plus any extras.
 - **architecture decisions touched** — which CLAUDE.md decisions this item affects
   (language boundaries, compute-layer routing, Docker/Tauri split, CI/CD). Required so
