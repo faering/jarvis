@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentClient } from "./agent/client.ts";
 import { ConnectionStatus } from "./agent/ConnectionStatus.tsx";
 import { useAgentConnection } from "./agent/useAgentConnection.ts";
+import { ChatInput } from "./conversation/ChatInput.tsx";
+import { isTypingKey } from "./conversation/keys.ts";
+import { useConversation } from "./conversation/useConversation.ts";
 import { DemoDriver } from "./presence/demoDriver.ts";
 import { usePresence } from "./presence/usePresence.ts";
 import { ScreenHost } from "./screens/ScreenHost.tsx";
@@ -23,13 +26,34 @@ export function App({ agent }: { agent: AgentClient }) {
     return {
       store,
       screen: initialScreen(search, store, import.meta.env.VITE_DEFAULT_SCREEN),
-      demo: initialDemo(search, store),
+      demo: initialDemo(search, store, import.meta.env.DEV),
       dimAfterS: dim > 0 ? dim : undefined,
     };
   });
   const [driver] = useState(() => new DemoDriver());
   const [demo, setDemo] = useState(boot.demo);
-  const presence = usePresence(connection, driver, demo);
+  const { conversation, send } = useConversation(agent, connection.state);
+  const presence = usePresence(connection, conversation, driver, demo);
+  const connected = connection.state === "open";
+
+  // The keyboard input: any printable key opens it (with that key typed); a tap
+  // opens it empty. `n` remounts it per opening, so it starts from `initial`.
+  const [typing, setTyping] = useState<{ initial: string; n: number } | null>(
+    null,
+  );
+  const openings = useRef(0);
+  const openInput = useCallback((initial: string) => {
+    setTyping((open) => open ?? { initial, n: ++openings.current });
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isTypingKey(e) || e.target instanceof HTMLInputElement) return;
+      e.preventDefault();
+      openInput(e.key);
+    };
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [openInput]);
 
   return (
     <div className="app">
@@ -48,7 +72,19 @@ export function App({ agent }: { agent: AgentClient }) {
             setDemo(on);
             saveDemo(boot.store, on);
           }}
-          onTap={() => demo && driver.advance()}
+          onTap={() => (demo ? driver.advance() : openInput(""))}
+          awake={typing !== null}
+          input={
+            typing && (
+              <ChatInput
+                key={typing.n}
+                initial={typing.initial}
+                enabled={connected}
+                onSend={send}
+                onClose={() => setTyping(null)}
+              />
+            )
+          }
           dimAfterS={boot.dimAfterS}
         />
       </main>

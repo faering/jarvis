@@ -328,3 +328,46 @@ describe("AgentClient logging", () => {
     });
   });
 });
+
+describe("AgentClient conversation", () => {
+  it("won't say anything while not connected", async () => {
+    const { client, server } = await setup();
+    expect(client.say("hello")).toBe(false);
+    expect(server.received).toEqual([]);
+  });
+
+  it("sends say frames with say-N ids once open", async () => {
+    const { client, server } = await setup();
+    client.start();
+    await waitFor(client, (s) => s.state === "open");
+    expect(client.say("What's on today?")).toBe(true);
+    expect(client.say("And tomorrow?")).toBe(true);
+    for (let i = 0; i < 50 && server.received.length < 2; i++) await sleep(10);
+    expect(server.received).toEqual([
+      { v: 0, type: "say", id: "say-1", payload: { text: "What's on today?" } },
+      { v: 0, type: "say", id: "say-2", payload: { text: "And tomorrow?" } },
+    ]);
+  });
+
+  it("hands turn frames to onTurnFrame listeners, not other frames", async () => {
+    const { client, server } = await setup();
+    const types: string[] = [];
+    const off = client.onTurnFrame((frame) => types.push(frame.type));
+    client.start();
+    await waitFor(client, (s) => s.state === "open");
+    const frame = (type: string, payload: object) =>
+      JSON.stringify({ v: 0, type, id: null, payload });
+    server.sockets[0]!.send(frame("state", { state: "routing" }));
+    server.sockets[0]!.send(
+      frame("reply", { delta: "Hi", done: false, degraded: false }),
+    );
+    server.sockets[0]!.send(frame("say", { text: "not a turn frame" }));
+    for (let i = 0; i < 50 && types.length < 2; i++) await sleep(10);
+    await sleep(20);
+    expect(types).toEqual(["state", "reply"]);
+    off();
+    server.sockets[0]!.send(frame("state", { state: "idle" }));
+    await sleep(30);
+    expect(types).toHaveLength(2);
+  });
+});

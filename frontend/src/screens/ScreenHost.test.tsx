@@ -43,10 +43,60 @@ describe("ScreenHost", () => {
     const html = await render("face", {
       state: "speaking",
       expression: "happy",
-      caption: { who: "jarvis", text: "Stand-up at 9:30." },
+      captions: [
+        { who: "user", text: "What's on today?" },
+        { who: "jarvis", text: "Stand-up at 9:30.", streaming: true },
+      ],
     });
     expect(html).toContain('aria-live="polite"');
+    expect(html).toContain("What&#x27;s on today?");
     expect(html).toContain("Stand-up at 9:30.");
+    expect(html).toContain("caption-streaming");
     expect(html).not.toContain("screen-quiet");
+  });
+});
+
+describe("ScreenHost conversation", () => {
+  const renderWith = (extra: object, presence: Presence) =>
+    renderResolved(
+      <ScreenHost
+        presence={presence}
+        initialScreen="orb"
+        store={null}
+        demo={false}
+        onDemoChange={() => {}}
+        onTap={() => {}}
+        {...extra}
+      />,
+    );
+
+  it("stays awake while a conversation shows or while typing", async () => {
+    const idle = { state: "idle", expression: "neutral" } as const;
+    expect(await renderWith({}, idle)).toContain("screen-quiet");
+    const talking = {
+      ...idle,
+      captions: [{ who: "jarvis", text: "Hi." }],
+    } as Presence;
+    expect(await renderWith({}, talking)).not.toContain("screen-quiet");
+    expect(await renderWith({ awake: true }, idle)).not.toContain(
+      "screen-quiet",
+    );
+  });
+
+  it("draws the input slot and marks degraded and failed replies", async () => {
+    const html = await renderWith(
+      { input: <div className="chat-input">typing</div> },
+      {
+        state: "idle",
+        expression: "concerned",
+        captions: [
+          { who: "jarvis", text: "Local.", tone: "degraded" },
+          { who: "jarvis", text: "No.", tone: "error" },
+        ],
+      },
+    );
+    expect(html).toContain('class="chat-input"');
+    expect(html).toContain("answered by the local model");
+    expect(html).toContain("caption-error");
   });
 });

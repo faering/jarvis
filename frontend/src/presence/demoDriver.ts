@@ -12,44 +12,48 @@ export const DEMO_SCRIPT: readonly DemoStep[] = [
     state: "listening",
     expression: "curious",
     durationMs: 3000,
-    caption: { who: "user", text: "What's on today?" },
+    captions: [{ who: "user", text: "What's on today?" }],
   },
   { state: "thinking", expression: "neutral", durationMs: 2500 },
   {
     state: "speaking",
     expression: "happy",
     durationMs: 4500,
-    caption: {
-      who: "jarvis",
-      text: "Stand-up at 9:30, then a clear afternoon.",
-    },
+    captions: [
+      {
+        who: "jarvis",
+        text: "Stand-up at 9:30, then a clear afternoon.",
+      },
+    ],
   },
   {
     state: "listening",
     expression: "neutral",
     durationMs: 3000,
-    caption: { who: "user", text: "Plan the print for the new enclosure." },
+    captions: [{ who: "user", text: "Plan the print for the new enclosure." }],
   },
   {
     state: "offloaded",
     expression: "curious",
     durationMs: 4000,
-    caption: { who: "jarvis", text: "Give me a moment — I'll ping you." },
+    captions: [{ who: "jarvis", text: "Give me a moment — I'll ping you." }],
   },
   {
     state: "speaking",
     expression: "amused",
     durationMs: 4000,
-    caption: {
-      who: "jarvis",
-      text: "Done. Eleven hours, so maybe start tonight.",
-    },
+    captions: [
+      {
+        who: "jarvis",
+        text: "Done. Eleven hours, so maybe start tonight.",
+      },
+    ],
   },
   {
     state: "speaking",
     expression: "concerned",
     durationMs: 4000,
-    caption: { who: "jarvis", text: "Heads up: rain from three." },
+    captions: [{ who: "jarvis", text: "Heads up: rain from three." }],
   },
   { state: "idle", expression: "neutral", durationMs: 5000 },
   { state: "disconnected", expression: "neutral", durationMs: 3500 },

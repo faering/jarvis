@@ -56,11 +56,18 @@ export function stepScreen(current: ScreenId, delta: 1 | -1): ScreenId {
   return SCREEN_IDS[(i + delta + SCREEN_IDS.length) % SCREEN_IDS.length]!;
 }
 
-/** Demo mode: `?demo=0|1` > remembered > on (no voice loop to drive it yet). */
-export function initialDemo(search: string, store: KeyValueStore | null) {
+/**
+ * Demo mode: `?demo=0|1` > remembered > `fallback` (on in dev builds, off in
+ * production, where the agent drives the screen).
+ */
+export function initialDemo(
+  search: string,
+  store: KeyValueStore | null,
+  fallback: boolean,
+) {
   const value =
     new URLSearchParams(search).get("demo") ?? read(store, DEMO_STORAGE_KEY);
-  return value !== "0";
+  return value === null ? fallback : value !== "0";
 }
 
 export function saveDemo(store: KeyValueStore | null, on: boolean) {

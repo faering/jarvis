@@ -17,6 +17,7 @@ describe("resolvePresence", () => {
     expect(resolvePresence({ connection })).toEqual({
       state: "disconnected",
       expression: "neutral",
+      captions: [],
     });
   });
 
@@ -31,6 +32,20 @@ describe("resolvePresence", () => {
     expect(
       resolvePresence({ connection: "closed", loop: "speaking" }).state,
     ).toBe("disconnected");
+  });
+
+  it("carries the captions and looks concerned when a reply failed", () => {
+    const ok = [{ who: "jarvis", text: "Hi." }] as const;
+    expect(resolvePresence({ connection: "open", captions: ok })).toMatchObject(
+      {
+        captions: ok,
+        expression: "neutral",
+      },
+    );
+    const failed = [{ who: "jarvis", text: "No.", tone: "error" }] as const;
+    expect(
+      resolvePresence({ connection: "open", captions: failed }).expression,
+    ).toBe("concerned");
   });
 
   it("lets the demo driver win over the connection", () => {
