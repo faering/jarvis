@@ -24,12 +24,14 @@ class Cancel:
 @dataclass(frozen=True)
 class Utterance:
     """One user turn, ended by a turn boundary: recorded ``audio`` (transcribed by STT) or
-    ``text``. ``deep`` asks for the heavy route (planning, long-form answers)."""
+    ``text``. ``deep`` asks for the heavy route (planning, long-form answers).
+    ``trace_id``: the request's trace, if it already has one (a ``say`` frame)."""
 
     text: str | None = None
     audio: bytes | None = None
     audio_format: str = "wav"
     deep: bool = False
+    trace_id: str | None = None
 
     def __post_init__(self) -> None:
         if (self.text is None) == (self.audio is None):

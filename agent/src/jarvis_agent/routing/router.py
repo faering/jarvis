@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from jarvis_agent.backends import LLM, BackendError, Backends, ChatMessage, Vision
+from jarvis_agent.logs import kv
 from jarvis_agent.routing.layers import ComputeLayer, NoProviderError, Provider, pick
 from jarvis_agent.routing.policy import Route, RoutingPolicy, Task
 
@@ -100,7 +101,7 @@ class Router:
             reason = f"{provider.name} failed: {exc}"
         else:
             return Reply(text, Route.HEAVY, provider.name, provider.layer)
-        log.warning("heavy route degraded to the local LLM: %s", reason)
+        log.warning("heavy route degraded to the local LLM", extra=kv(reason=reason))
         return await self._local(messages, Route.HEAVY, reason)
 
     async def _local(

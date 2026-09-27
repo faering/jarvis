@@ -1,4 +1,4 @@
-"""The validated agent config: hardware toggles, role backends, state store, capabilities.
+"""The validated agent config: hardware, role backends, state store, capabilities, logging.
 
 Backends and store reuse ``BackendSettings`` / ``StoreSettings`` as-is, so the layered
 config feeds ``build_backends()`` and ``open_state()`` unchanged.
@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
 
 from jarvis_agent.backends.config import BackendSettings
 from jarvis_agent.hardware import Toggle
+from jarvis_agent.logs.config import LogSettings
 from jarvis_agent.store.config import StoreSettings
 
 
@@ -57,6 +58,7 @@ class JarvisConfig(BaseModel):
     backends: BackendSettings = BackendSettings()
     store: StoreSettings = StoreSettings()
     capabilities: dict[str, CapabilityConfig] = {}
+    logging: LogSettings = LogSettings()
 
     _sources: tuple[str, ...] = PrivateAttr(default=("defaults",))
 

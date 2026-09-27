@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Self
 
 from jarvis_agent.backends.base import TTS
+from jarvis_agent.logs import kv
 from jarvis_agent.speech.segmenter import Segmenter
 from jarvis_agent.speech.sink import AudioSink
 
@@ -147,7 +148,7 @@ class SpeechQueue:
         turn = self._last_turn
         if len(self._done) >= self._max_turns:
             self.dropped_turns += 1
-            logger.warning("speech: too many turns queued, dropped turn %d", turn)
+            logger.warning("too many turns queued, dropped a turn", extra=kv(turn=turn))
             self._emit("interrupted", turn)
             return turn
         self._open_turn = turn
@@ -200,7 +201,7 @@ class SpeechQueue:
         try:
             await self._sink.stop()
         except Exception:
-            logger.exception("speech: sink.stop() failed")
+            logger.exception("sink.stop() failed")
 
     async def wait(self, turn: int) -> None:
         """Wait until ``turn`` has finished or been interrupted."""
@@ -223,7 +224,7 @@ class SpeechQueue:
         if chunk.text is not None:
             if self._pending_texts >= self._max_pending:
                 self.dropped += 1
-                logger.warning("speech: queue full, dropped chunk of turn %d", chunk.turn)
+                logger.warning("queue full, dropped a chunk", extra=kv(turn=chunk.turn))
                 return
             self._pending_texts += 1
         self._pending.append(chunk)
@@ -293,7 +294,7 @@ class SpeechQueue:
         try:
             self._on_event(SpeechEvent(kind, turn))
         except Exception:
-            logger.exception("speech: on_event callback failed")
+            logger.exception("on_event callback failed")
 
 
 async def _settle[T](op: Awaitable[T], what: str) -> T | None:
@@ -313,6 +314,6 @@ async def _settle[T](op: Awaitable[T], what: str) -> T | None:
     if task.cancelled():
         return None
     if (error := task.exception()) is not None:
-        logger.error("speech: %s failed, skipping chunk: %s", what, error)
+        logger.error("speech failed, skipping the chunk", exc_info=error, extra=kv(stage=what))
         return None
     return task.result()

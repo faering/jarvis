@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from jarvis_agent.logs import kv
+
 log = logging.getLogger(__name__)
 
 Toggle = Literal["on", "off", "auto"]
@@ -95,7 +97,10 @@ def detect(
         try:
             evidence = probe() if probe else None
         except Exception as exc:  # best-effort boundary: see docstring
-            log.warning("hardware probe %s failed: %r", name, exc)
+            log.warning(
+                "hardware probe failed",
+                extra=kv(probe=name, reason=str(exc), **{"error.type": type(exc).__name__}),
+            )
             status[name] = HardwareStatus(False, f"probe failed: {type(exc).__name__}: {exc}")
             continue
         status[name] = (

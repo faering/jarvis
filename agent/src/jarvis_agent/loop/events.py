@@ -1,6 +1,10 @@
-"""What the voice loop reports to the UI: state changes, transcripts and reply text."""
+"""What the voice loop reports to the UI: state changes, transcripts and reply text.
 
-from dataclasses import dataclass
+Each event carries the ``trace_id`` of the turn it belongs to (docs/logging.md), if any.
+It is left out of equality, so tests compare events by content.
+"""
+
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 
@@ -17,6 +21,7 @@ class LoopState(StrEnum):
 @dataclass(frozen=True)
 class StateChanged:
     state: LoopState
+    trace_id: str | None = field(default=None, compare=False, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -24,6 +29,7 @@ class Transcript:
     """What the user said (the STT result, or the text as typed)."""
 
     text: str
+    trace_id: str | None = field(default=None, compare=False, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -42,6 +48,7 @@ class ReplyText:
     done: bool = False
     degraded: bool = False
     spoken: bool = True
+    trace_id: str | None = field(default=None, compare=False, kw_only=True)
 
 
 type LoopEvent = StateChanged | Transcript | ReplyText
