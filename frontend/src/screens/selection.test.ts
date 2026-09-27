@@ -62,13 +62,16 @@ describe("stepScreen", () => {
 });
 
 describe("demo mode", () => {
-  it("is on by default, overridable by query and remembered", () => {
+  it("defaults to the build's fallback, overridable by query and remembered", () => {
     const store = memoryStore();
-    expect(initialDemo("", store)).toBe(true);
-    expect(initialDemo("?demo=0", store)).toBe(false);
+    expect(initialDemo("", store, true)).toBe(true); // dev build
+    expect(initialDemo("", store, false)).toBe(false); // production build
+    expect(initialDemo("?demo=0", store, true)).toBe(false);
+    expect(initialDemo("?demo=1", store, false)).toBe(true);
     saveDemo(store, false);
     expect(store.getItem(DEMO_STORAGE_KEY)).toBe("0");
-    expect(initialDemo("", store)).toBe(false);
-    expect(initialDemo("?demo=1", store)).toBe(true);
+    expect(initialDemo("", store, true)).toBe(false);
+    saveDemo(store, true);
+    expect(initialDemo("", store, false)).toBe(true);
   });
 });

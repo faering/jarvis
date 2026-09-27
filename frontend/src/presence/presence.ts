@@ -24,16 +24,21 @@ export const EXPRESSIONS = [
 ] as const;
 export type Expression = (typeof EXPRESSIONS)[number];
 
-/** A line shown by the conversation overlay (demo only for now). */
+/** A line shown by the conversation overlay. */
 export interface Caption {
   who: "user" | "jarvis";
   text: string;
+  /** Jarvis is still writing this reply. */
+  streaming?: boolean;
+  /** `degraded`: the local model answered; `error`: no answer. */
+  tone?: "degraded" | "error";
 }
 
 export interface Presence {
   state: PresenceState;
   expression: Expression;
-  caption?: Caption;
+  /** The conversation overlay, oldest first (your line, then Jarvis's). */
+  captions?: readonly Caption[];
 }
 
 /** Loop states the agent sends in its `state` frame (#118). */
@@ -47,8 +52,10 @@ export function presenceFromLoop(loop: LoopState): PresenceState {
 
 export interface PresenceInputs {
   connection: ConnectionState;
-  /** Last loop state from the agent, once the protocol carries it. */
+  /** Last loop state from the agent's `state` frames. */
   loop?: LoopState | null;
+  /** The conversation overlay from the agent's turn frames. */
+  captions?: readonly Caption[];
   /** Demo driver output; when set it wins, so screens are evaluable offline. */
   demo?: Presence | null;
 }
@@ -57,15 +64,19 @@ export interface PresenceInputs {
 export function resolvePresence({
   connection,
   loop,
+  captions = [],
   demo,
 }: PresenceInputs): Presence {
   if (demo) return demo;
+  const failed = captions.some((c) => c.tone === "error");
+  const expression: Expression = failed ? "concerned" : "neutral";
   if (connection !== "open") {
-    return { state: "disconnected", expression: "neutral" };
+    return { state: "disconnected", expression, captions };
   }
   return {
     state: loop ? presenceFromLoop(loop) : "idle",
-    expression: "neutral",
+    expression,
+    captions,
   };
 }
 

@@ -6,12 +6,10 @@ import {
   type ComponentType,
   type LazyExoticComponent,
   type PointerEvent,
+  type ReactNode,
 } from "react";
-import {
-  describePresence,
-  type Caption,
-  type Presence,
-} from "../presence/presence.ts";
+import { ConversationOverlay } from "../conversation/ConversationOverlay.tsx";
+import { describePresence, type Presence } from "../presence/presence.ts";
 import {
   SCREEN_IDS,
   SCREENS,
@@ -28,26 +26,18 @@ const LAZY_SCREENS = Object.fromEntries(
 const SWIPE_PX = 60;
 const TAP_PX = 12;
 
-/** Conversation overlay: the last heard/spoken line while talking. */
-function CaptionStrip({ caption }: { caption: Caption }) {
-  return (
-    <p className={`caption caption-${caption.who}`} aria-live="polite">
-      <span className="caption-who">
-        {caption.who === "user" ? "You" : "Jarvis"}
-      </span>
-      {caption.text}
-    </p>
-  );
-}
-
 export interface ScreenHostProps {
   presence: Presence;
   initialScreen: ScreenId;
   store: KeyValueStore | null;
   demo: boolean;
   onDemoChange: (on: boolean) => void;
-  /** Tap on the screen (advances the demo). */
+  /** Tap on the screen (advances the demo, or opens the keyboard input). */
   onTap: () => void;
+  /** The keyboard input, drawn over the screen above the switcher. */
+  input?: ReactNode;
+  /** Keep the screen awake (e.g. while typing). */
+  awake?: boolean;
   /** Seconds idle before the screen dims (burn-in / power). */
   dimAfterS?: number;
 }
@@ -63,6 +53,8 @@ export function ScreenHost({
   demo,
   onDemoChange,
   onTap,
+  input,
+  awake = false,
   dimAfterS = 60,
 }: ScreenHostProps) {
   const [screen, setScreen] = useState(initialScreen);
@@ -89,9 +81,13 @@ export function ScreenHost({
     }
   };
 
-  const { state, expression, caption } = presence;
+  const { state, expression, captions = [] } = presence;
   const Screen = LAZY_SCREENS[screen];
-  const quiet = state === "idle" || state === "disconnected";
+  // Dim only when nothing is happening: no conversation on screen, no typing.
+  const quiet =
+    (state === "idle" || state === "disconnected") &&
+    captions.length === 0 &&
+    !awake;
   return (
     <div
       className={`screen screen-${screen}${quiet ? " screen-quiet" : ""}`}
@@ -106,8 +102,9 @@ export function ScreenHost({
         <Suspense fallback={null}>
           <Screen presence={presence} />
         </Suspense>
-        {caption && <CaptionStrip caption={caption} />}
+        <ConversationOverlay captions={captions} />
       </div>
+      {input}
       <nav
         className="switcher"
         aria-label="Screens"

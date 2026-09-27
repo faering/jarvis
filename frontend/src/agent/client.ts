@@ -57,6 +57,7 @@ export interface AgentClientOptions {
 }
 
 type Listener = () => void;
+type FrameListener = (frame: Envelope) => void;
 
 /**
  * Framework-free client for the agent WebSocket bridge. Reconnects with
@@ -81,6 +82,8 @@ export class AgentClient {
     retryAt: null,
   };
   private readonly listeners = new Set<Listener>();
+  private readonly turnListeners = new Set<FrameListener>();
+  private saySeq = 0;
   private socket: WebSocket | null = null;
   private attempt = 0;
   private pingSeq = 0;
@@ -107,6 +110,28 @@ export class AgentClient {
   };
 
   readonly getSnapshot = (): AgentSnapshot => this.snapshot;
+
+  /** Turn frames (`state`, `transcript`, `reply`, `error`) as they arrive. */
+  readonly onTurnFrame = (listener: FrameListener): (() => void) => {
+    this.turnListeners.add(listener);
+    return () => this.turnListeners.delete(listener);
+  };
+
+  /**
+   * Send a typed utterance. Returns false when not connected (nothing is sent).
+   * Its id is `say-N`, so an `error` answering it can be matched.
+   */
+  say(text: string): boolean {
+    if (this.snapshot.state !== "open") {
+      log.warn("say dropped: not connected", { state: this.snapshot.state });
+      return false;
+    }
+    const id = `say-${++this.saySeq}`;
+    this.send(envelope("say", id, { text }));
+    log.info("say sent", { id, chars: text.length });
+    log.trace("say text", { id, text });
+    return true;
+  }
 
   /** Connect (no-op unless closed). */
   start(): void {
@@ -168,6 +193,9 @@ export class AgentClient {
         v: frame.v,
       });
       return;
+    }
+    if (TURN_FRAMES.has(frame.type)) {
+      for (const listener of this.turnListeners) listener(frame);
     }
     switch (frame.type) {
       case "hello":
