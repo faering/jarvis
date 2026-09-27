@@ -1,11 +1,13 @@
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import {
   AgentClient,
   type AgentClientOptions,
   type AgentSnapshot,
 } from "./client.ts";
+import type { LogRecord } from "../log/format.ts";
+import { configureLogging, setTurn } from "../log/logger.ts";
 
 interface FakeAgentOptions {
   /** Protocol announced in hello; null sends no hello at all. */
@@ -249,5 +251,80 @@ describe("AgentClient", () => {
     await sleep(100);
     expect(server.sockets).toHaveLength(1);
     expect(client.getSnapshot().state).toBe("closed");
+  });
+});
+
+describe("AgentClient logging", () => {
+  const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
+  let records: LogRecord[] = [];
+  beforeEach(() => {
+    records = [];
+    setTurn(null);
+    configureLogging({ level: "TRACE", sinks: [(r) => records.push(r)] });
+  });
+  afterEach(() => configureLogging({ sinks: [] }));
+
+  const find = (message: string) =>
+    records.filter((r) => r.message === message);
+
+  it("takes the turn from a traced frame's trace_id", async () => {
+    const { client, server } = await setup();
+    client.start();
+    await waitFor(client, (s) => s.state === "open");
+    server.sockets[0]!.send(
+      JSON.stringify({
+        v: 0,
+        type: "error",
+        id: null,
+        payload: {
+          code: "tts_failed",
+          message: "no voice",
+          trace_id: TRACE_ID,
+        },
+      }),
+    );
+    await waitFor(client, (s) => s.lastError !== null);
+    const agentError = find("agent reported an error")[0];
+    expect(agentError?.turn).toBe(TRACE_ID);
+    expect(agentError?.attrs).toBe(
+      'error.code=tts_failed error.message="no voice"',
+    );
+    const received = find("frame received");
+    expect(received.at(-1)).toMatchObject({ level: "TRACE", turn: TRACE_ID });
+    expect(received[0]?.turn).toBeNull(); // hello is not part of a turn
+  });
+
+  it("logs connect, retry with attempt and backoff, and the lost connection", async () => {
+    const { client, server } = await setup();
+    client.start();
+    await waitFor(client, (s) => s.state === "open");
+    server.sockets[0]!.close();
+    await waitFor(client, (s) => s.state === "reconnecting");
+    await waitFor(client, (s) => s.state === "open");
+
+    expect(find("connecting").map((r) => r.attrs)).toEqual([
+      `url=${server.url} attempt=1`,
+      `url=${server.url} attempt=2`,
+    ]);
+    expect(find("connected")[0]?.attrs).toBe("agent.version=1.2.3 protocol=0");
+    expect(find("connection lost")[0]).toMatchObject({
+      level: "WARN",
+      attrs: "reason=closed",
+    });
+    expect(find("retrying")[0]?.attrs).toBe(
+      "reason=closed attempt=2 backoff_ms=20",
+    );
+  });
+
+  it("logs an incompatible agent as ERROR", async () => {
+    const { client } = await setup({ protocol: 1 });
+    client.start();
+    await waitFor(client, (s) => s.state === "incompatible");
+    expect(
+      find("agent speaks another protocol, not retrying")[0],
+    ).toMatchObject({
+      level: "ERROR",
+      attrs: "agent.version=1.2.3 agent.protocol=1 envelope.v=0 protocol=0",
+    });
   });
 });

@@ -1,7 +1,14 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { AgentSnapshot } from "../agent/client.ts";
 import type { DemoDriver } from "./demoDriver.ts";
-import { resolvePresence, type Presence } from "./presence.ts";
+import { logger } from "../log/logger.ts";
+import {
+  resolvePresence,
+  type Presence,
+  type PresenceState,
+} from "./presence.ts";
+
+const log = logger("presence");
 
 /** Presence from the live connection, or from the demo driver while it runs. */
 export function usePresence(
@@ -19,8 +26,19 @@ export function usePresence(
     driver.start();
     return () => driver.stop();
   }, [driver, demo]);
-  return resolvePresence({
+  const presence = resolvePresence({
     connection: connection.state,
     demo: demo ? step : null,
   });
+  // A ref, not the effect alone: StrictMode re-runs effects, the change is logged once.
+  const logged = useRef<PresenceState | null>(null);
+  useEffect(() => {
+    if (logged.current === presence.state) return;
+    logged.current = presence.state;
+    log.info("state changed", {
+      state: presence.state,
+      demo: demo || undefined,
+    });
+  }, [presence.state, demo]);
+  return presence;
 }
