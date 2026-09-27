@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_APP_VERSION?: string;
   /** Agent WebSocket URL; defaults to ws://127.0.0.1:8000/ws. */
   readonly VITE_AGENT_WS_URL?: string;
+  /** Default-screen prototype to show first: face | orb | ambient (spike #133). */
+  readonly VITE_DEFAULT_SCREEN?: string;
 }
 
 interface ImportMeta {
