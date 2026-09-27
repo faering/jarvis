@@ -84,15 +84,23 @@ The text is always the OTel name (`WARN`, `FATAL`), never `WARNING` or `CRITICAL
   component per UTC day (`logs/` in the repo in dev, git-ignored). Each component also
   writes the same lines to stderr, so crashes before logging starts still reach the journal.
 - **Access:** the folder is `root:jarvis-log`, mode `2775`; files are `0640`. The agent
-  container, the app's user and the deploy scripts write through the `jarvis-log` group.
+  container (`group_add` of the group's fixed GID **2750**), the app's user (your login, which
+  runs the display) and the root deploy scripts write there; the `deploy` SSH user does not.
+  `scripts/pi/setup.sh` creates the group and folder; the app gets `JARVIS_LOG_DIR` from
+  `/etc/environment.d/60-jarvis-logs.conf`.
+- **Bash:** scripts log through `scripts/lib/log.sh` (installed root-owned to
+  `/usr/local/lib/jarvis/log.sh`): `log WARN rollback "health check failed" attempt=2`.
+  Root scripts source it only when root owns it, and it never writes through a symlink.
 - **Retention:** 90 days.
 - **Budget:** 20 GiB for the folder; 500 MiB per component per day. Set generously on the
   256 GB card so nothing useful is dropped; revisit once `jarvis-logs usage` shows real
   daily and monthly volumes. At the daily cap a
   writer keeps only WARN and above and logs one ERROR saying so; at 110% it stops writing
   until the next day.
-- **Pruning:** `jarvis-logs prune` (hourly systemd timer) deletes files older than 90 days,
-  then the oldest files until the folder is under budget.
+- **Pruning:** `jarvis-logs prune` (hourly `jarvis-logs-prune.timer`, as a throwaway user
+  with only the log group) deletes files older than 90 days, then the oldest files until the
+  folder is under budget. It touches only `jarvis-*-YYYY-MM-DD.log` files and never today's
+  (they're open, so deleting frees nothing). `--dry-run` shows what it would delete.
 - **Watcher:** the agent checks the folder every minute. At **80%** of the folder budget,
   or of a component's daily cap, it logs a WARN and Jarvis tells you; it alerts again only
   after usage has dropped below 70%.
@@ -106,6 +114,10 @@ with their record) and filters them:
 jarvis-logs --since 1h                      # everything from the last hour
 jarvis-logs --turn 4bf92f35                 # one turn, across agent and app
 jarvis-logs --level WARN --component agent  # WARN and above from the agent
-jarvis-logs -f                              # follow, like tail -f
+jarvis-logs -f                              # last 10 records, then follow, like tail -f
 jarvis-logs usage                           # size per component per day and month, vs budget
 ```
+
+`--since` takes `30m`, `1h`, `2d` or an ISO time (UTC unless it has an offset); `--turn`
+takes the 8-char id or the full trace id; `-n N` keeps the last N records; `--dir` defaults
+to `$JARVIS_LOG_DIR`, else `/var/log/jarvis`.
