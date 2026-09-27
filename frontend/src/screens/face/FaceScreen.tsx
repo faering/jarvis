@@ -4,7 +4,8 @@ import {
   type Expression,
   type Presence,
   type PresenceState,
-} from "../presence/presence.ts";
+} from "../../presence/presence.ts";
+import "./face.css";
 
 // Pre-drawn looks: eyes open/gaze per loop state, brows + mouth per expression.
 // Only transforms and opacity animate (cheap on the Pi); paths swap instantly.

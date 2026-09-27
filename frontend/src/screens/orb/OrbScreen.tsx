@@ -1,4 +1,5 @@
-import { describePresence, type Presence } from "../presence/presence.ts";
+import { describePresence, type Presence } from "../../presence/presence.ts";
+import "./orb.css";
 
 const BARS = [-24, -12, 0, 12, 24];
 

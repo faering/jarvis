@@ -1,0 +1,80 @@
+/* Face: eyes open/gaze per loop state, brows + mouth per expression. */
+.face {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+}
+
+.face-eye {
+  fill: var(--tint);
+}
+
+.face-eye-open {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 250ms ease-out;
+}
+
+.face-gaze {
+  transition: transform 400ms ease-out;
+}
+
+.face-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: blink 5s infinite;
+}
+
+.face-breathe {
+  animation: breathe 6s ease-in-out infinite alternate;
+}
+
+.face-brow,
+.face-mouth,
+.face-spinner {
+  fill: none;
+  stroke: var(--tint);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.face-mouth-talk {
+  fill: var(--tint);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: talk 0.28s ease-in-out infinite alternate;
+}
+
+.face-dots circle {
+  fill: var(--tint);
+  animation: fade 1.2s ease-in-out infinite alternate;
+}
+.face-dots circle:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.face-dots circle:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.face-spinner {
+  stroke-width: 3;
+  transform-origin: 212px 22px;
+  animation: spin 1.6s linear infinite;
+}
+
+@keyframes blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes breathe {
+  to {
+    transform: translateY(3px);
+  }
+}

@@ -1,0 +1,79 @@
+/* Orb: all parts share the root coordinate space, centre (100, 100). */
+.orb {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+}
+
+.orb * {
+  transform-origin: 100px 100px;
+}
+
+.orb-halo circle {
+  fill: var(--tint);
+}
+
+.orb-segments circle,
+.orb-ring {
+  fill: none;
+  stroke: var(--tint);
+}
+
+.orb-segments {
+  opacity: 0.7;
+  stroke-width: 3;
+  animation: spin var(--spin) linear infinite;
+}
+
+.orb-ring {
+  stroke-width: 3;
+}
+
+.orb-stop-inner {
+  stop-color: var(--tint);
+  stop-opacity: 0.95;
+}
+
+.orb-stop-outer {
+  stop-color: var(--tint);
+  stop-opacity: 0.15;
+}
+
+.orb-pulse {
+  animation: pulse var(--pulse) ease-in-out infinite alternate;
+}
+
+.orb-bar {
+  fill: #0b1020;
+  opacity: 0.75;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: talk 0.45s ease-in-out infinite alternate;
+}
+
+.screen[data-state="listening"] .orb-bar {
+  opacity: 0.4;
+  animation-duration: 0.9s;
+}
+
+.orb-orbit {
+  fill: var(--tint);
+  animation: spin 3s linear infinite;
+}
+
+.screen[data-state="disconnected"] .orb * {
+  animation: none;
+}
+
+.screen[data-state="disconnected"] .orb {
+  opacity: 0.5;
+}
+
+@keyframes pulse {
+  from {
+    transform: scale(0.92);
+  }
+  to {
+    transform: scale(1.04);
+  }
+}

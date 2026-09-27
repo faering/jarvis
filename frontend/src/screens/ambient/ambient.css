@@ -1,0 +1,81 @@
+/* Ambient: clock-first; stacked in portrait, two columns in landscape. */
+.ambient {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 1rem;
+  width: 100%;
+  height: 100%;
+  color: #e2e8f0;
+}
+
+.ambient-clock {
+  align-self: end;
+  text-align: center;
+}
+
+.ambient-time {
+  display: block;
+  font-size: clamp(3.5rem, 22vmin, 9rem);
+  font-weight: 300;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ambient-date {
+  margin-top: 0.25rem;
+  font-size: 1.25rem;
+  color: #94a3b8;
+}
+
+.ambient-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ambient-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0.625rem 0.875rem;
+  border-left: 3px solid var(--tint);
+  border-radius: 0.5rem;
+  background: #111a2e;
+  font-size: 1.25rem;
+}
+
+.ambient-card-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+
+.ambient-orb {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  width: 24vmin;
+  height: 24vmin;
+}
+
+@media (orientation: landscape) {
+  .ambient {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+    align-items: center;
+  }
+
+  .ambient-clock {
+    align-self: center;
+  }
+
+  .ambient-orb {
+    right: auto;
+    left: 0;
+  }
+}
