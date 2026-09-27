@@ -203,6 +203,11 @@
         },
         "message": {
           "type": "string"
+        },
+        "trace_id": {
+          "description": "W3C trace id (32 lowercase hex) of the voice turn or request this frame belongs to, created by the agent; both sides log it (docs/logging.md). Absent outside a turn.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
         }
       },
       "required": ["code", "message"],
@@ -246,12 +251,21 @@
         "state": {
           "type": "string",
           "enum": ["idle", "listening", "routing", "speaking", "offloaded"]
+        },
+        "trace_id": {
+          "description": "W3C trace id (32 lowercase hex) of the voice turn or request this frame belongs to, created by the agent; both sides log it (docs/logging.md). Absent outside a turn.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
         }
       },
       "required": ["state"],
       "examples": [
         {
           "state": "idle"
+        },
+        {
+          "state": "listening",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
         }
       ]
     },
@@ -261,6 +275,11 @@
       "properties": {
         "text": {
           "type": "string"
+        },
+        "trace_id": {
+          "description": "W3C trace id (32 lowercase hex) of the voice turn or request this frame belongs to, created by the agent; both sides log it (docs/logging.md). Absent outside a turn.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
         }
       },
       "required": ["text"],
@@ -288,6 +307,11 @@
         },
         "spoken": {
           "type": "boolean"
+        },
+        "trace_id": {
+          "description": "W3C trace id (32 lowercase hex) of the voice turn or request this frame belongs to, created by the agent; both sides log it (docs/logging.md). Absent outside a turn.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
         }
       },
       "required": ["done", "degraded"],
