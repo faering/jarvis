@@ -9,12 +9,14 @@
 # Files:  /opt/jarvis/docker-compose.yml  root-owned compose file (from deploy/pi/)
 #         /opt/jarvis/agent.env           root-owned runtime config (JARVIS_*, API keys)
 #         /var/lib/jarvis/agent.env       deploy state; compose --env-file, pins AGENT_IMAGE_TAG
+#         /var/log/jarvis/jarvis-deploy-<UTC date>.log  log (docs/logging.md), also on stderr
 # On failure it rolls back to the previous tag; a failed first deploy removes the agent.
 set -euo pipefail
 
 # Test hooks only; never honoured as root (sudo also resets the environment).
 if [[ $EUID -eq 0 ]]; then
-  unset JARVIS_OPT_DIR JARVIS_STATE_DIR AGENT_HEALTH_TIMEOUT
+  unset JARVIS_OPT_DIR JARVIS_STATE_DIR AGENT_HEALTH_TIMEOUT JARVIS_LOG_LIB JARVIS_LOG_DIR \
+    JARVIS_LOG_COMPONENT JARVIS_LOG_TURN
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 fi
 opt="${JARVIS_OPT_DIR:-/opt/jarvis}"
@@ -29,9 +31,30 @@ tag_re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+-g[0-9a-f]{4,40}(-dirty)?)?$'
 version_re='^[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+\.g[0-9a-f]{4,40}(\.dirty)?)?$'
 protocol_re='^([0-9]+|none)$'
 
-log() { echo "[agent-deploy] $*"; }
+# Shared logger (scripts/lib/log.sh): sourced only if root owns it and its folder and nobody
+# else can write them; otherwise a stderr-only fallback. Logging never fails a deploy.
+log_lib="${JARVIS_LOG_LIB:-/usr/local/lib/jarvis/log.sh}"
+lib_ok() {
+  local p owner mode
+  for p in "$1" "$(dirname "$1")"; do
+    [[ -e "$p" && ! -L "$p" ]] || return 1
+    read -r owner mode < <(stat -c '%u %a' "$p")
+    [[ "$owner" == 0 || "$owner" == "$EUID" ]] && (((8#$mode & 8#022) == 0)) || return 1
+  done
+}
+if lib_ok "$log_lib"; then
+  # shellcheck source=../lib/log.sh
+  . "$log_lib"
+else
+  log() {
+    printf '[%s] [%-5s] [deploy] [%s] [--------] %s\n' \
+      "$(date -u '+%F %T.%3NZ')" "$1" "$2" "${*:3}" >&2
+  }
+  log WARN deploy.agent "shared logger missing or untrusted; logging to stderr only" path="$log_lib"
+fi
+info() { log INFO deploy.agent "$@"; }
 die() {
-  log "$*" >&2
+  log ERROR deploy.agent "$@"
   exit 1
 }
 usage() {
@@ -57,27 +80,27 @@ compose() { # compose <env-file> <args...>
 }
 
 # Healthy container + OCI version label (+ /version, once the agent serves it) == expected.
-verify() { # verify <env-file> <expected-version>
-  local env="$1" want="$2" cid health label reported deadline=$((SECONDS + timeout))
+verify() { # verify <env-file> <expected-version> <logger>
+  local env="$1" want="$2" lg="$3" cid health label reported deadline=$((SECONDS + timeout))
   while :; do
     cid="$(compose "$env" ps -q agent)"
     health="$([[ -n "$cid" ]] && docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" || echo missing)"
     case "$health" in
       healthy) break ;;
       unhealthy)
-        log "container is unhealthy"
+        log ERROR "$lg" "container is unhealthy" version="$want"
         return 1
         ;;
     esac
     if ((SECONDS >= deadline)); then
-      log "not healthy after ${timeout}s (status: $health)"
+      log ERROR "$lg" "not healthy in time" timeout_s="$timeout" status="$health"
       return 1
     fi
     sleep 2
   done
   label="$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$cid")"
   if [[ "$label" != "$want" ]]; then
-    log "image version label is '$label', expected '$want'"
+    log ERROR "$lg" "image version label mismatch" label="$label" expected="$want"
     return 1
   fi
   # /version lands with #28; until then a 404 just skips this check.
@@ -90,14 +113,14 @@ except urllib.error.HTTPError as e:
     sys.exit(0 if e.code == 404 else 1)
 print(json.loads(body)["version"])
 ')" || {
-    log "/version request failed or returned no version field"
+    log ERROR "$lg" "/version request failed or returned no version field"
     return 1
   }
   if [[ -n "$reported" && "$reported" != "$want" ]]; then
-    log "/version reports version '$reported', expected '$want'"
+    log ERROR "$lg" "/version mismatch" reported="$reported" expected="$want"
     return 1
   fi
-  log "healthy, version $want"
+  log INFO "$lg" "healthy" version="$want"
 }
 
 cmd_state() {
@@ -129,7 +152,7 @@ cmd_deploy() { # cmd_deploy <docker-tag> <expected-version> <protocol>
   prev_tag="$(state_get "$state" AGENT_IMAGE_TAG)"
   prev_version="$(state_get "$state" VERSION)"
   if [[ -n "$prev_tag" && ! "$prev_tag" =~ $tag_re ]]; then
-    log "ignoring malformed previous tag '$prev_tag' in $state"
+    log WARN deploy.agent "ignoring malformed previous tag" tag="$prev_tag" file="$state"
     prev_tag=""
   fi
   (
@@ -144,27 +167,29 @@ DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
   )
 
-  log "deploying ghcr.io/faering/jarvis-agent:$tag (previous: ${prev_tag:-none})"
-  if compose "$next" pull agent && compose "$next" up -d agent && verify "$next" "$expected"; then
+  info "deploy started" image="ghcr.io/faering/jarvis-agent:$tag" version="$expected" \
+    protocol="$protocol" previous="${prev_tag:-none}"
+  if compose "$next" pull agent && compose "$next" up -d agent && verify "$next" "$expected" deploy.agent; then
     mv -f "$next" "$state"
-    log "deployed agent $expected"
+    info "deployed" version="$expected" tag="$tag"
     exit 0
   fi
 
   if [[ -z "$prev_tag" ]]; then
     # First deploy: nothing to roll back to. Don't leave a broken agent running
     # (restart: unless-stopped would keep restarting it).
-    log "FAILED and there is no previous release to roll back to; removing the agent"
-    compose "$next" rm -s -f agent || log "could not remove the failed agent container"
+    log ERROR deploy.agent "deploy failed; no previous release to roll back to, removing the agent" \
+      version="$expected"
+    compose "$next" rm -s -f agent || log ERROR deploy.agent "could not remove the failed agent container"
     rm -f "$next"
     exit 1
   fi
   rm -f "$next"
-  log "FAILED; rolling back to $prev_tag"
-  if compose "$state" up -d agent && verify "$state" "$prev_version"; then
-    log "rolled back to agent $prev_version"
+  log WARN rollback "deploy failed, rolling back" version="$expected" to="$prev_tag"
+  if compose "$state" up -d agent && verify "$state" "$prev_version" rollback; then
+    log INFO rollback "rolled back" version="$prev_version" tag="$prev_tag"
   else
-    log "ROLLBACK FAILED too; the agent needs manual attention"
+    log ERROR rollback "rollback failed too; the agent needs manual attention" to="$prev_tag"
   fi
   exit 1
 }

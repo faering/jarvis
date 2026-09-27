@@ -9,6 +9,8 @@
 #         /usr/local/sbin/jarvis-install-app only (docs/pi-setup.md).
 # State:  $JARVIS_DIR/state/app.env (read by the compat gate). The installed .deb is kept as
 #         app/current.deb (the next deploy's rollback target), the one before as previous.deb.
+# Logs:   stderr, via the shared logger (docs/logging.md). The deploy user isn't in jarvis-log,
+#         so the log file gets jarvis-install-app's lines (as root), not these.
 set -euo pipefail
 
 [[ $# -eq 3 ]] || {
@@ -21,7 +23,26 @@ state="$dir/state/app.env"
 current="$dir/app/current.deb"
 previous="$dir/app/previous.deb"
 
-log() { echo "[app-deploy] $*"; }
+# Shared logger (scripts/lib/log.sh, installed root-owned by the Pi setup); this script is
+# piped over ssh, so it can't come from the repo. Fallback: plain stderr.
+log_lib="${JARVIS_LOG_LIB:-/usr/local/lib/jarvis/log.sh}"
+lib_ok() {
+  local p owner mode
+  for p in "$1" "$(dirname "$1")"; do
+    [[ -e "$p" && ! -L "$p" ]] || return 1
+    read -r owner mode < <(stat -c '%u %a' "$p")
+    [[ "$owner" == 0 || "$owner" == "$EUID" ]] && (((8#$mode & 8#022) == 0)) || return 1
+  done
+}
+if lib_ok "$log_lib"; then
+  # shellcheck source=../lib/log.sh
+  . "$log_lib"
+else
+  log() {
+    printf '[%s] [%-5s] [deploy] [%s] [--------] %s\n' \
+      "$(date -u '+%F %T.%3NZ')" "$1" "$2" "${*:3}" >&2
+  }
+fi
 state_get() { [[ -f "$1" ]] && sed -n "s/^$2=//p" "$1" | tail -n1 || true; }
 installed() { dpkg-query -W -f='${Status} ${Version}' "$1" 2>/dev/null | sed -n 's/^install ok installed //p'; }
 install() { sudo -n /usr/local/sbin/jarvis-install-app "$1"; }
@@ -34,7 +55,7 @@ prev_version="$(state_get "$state" VERSION)"
 # Never install from a kept .deb's path: the candidate would overwrite the rollback target.
 for kept in "$current" "$previous" "${prev_deb:-/nonexistent}"; do
   if [[ "$deb" -ef "$kept" ]]; then
-    log "$deb is a kept rollback .deb; stage the candidate elsewhere (e.g. $dir/incoming/)"
+    log ERROR deploy.app "candidate is a kept rollback .deb; stage it in incoming/" path="$deb"
     exit 1
   fi
 done
@@ -43,11 +64,13 @@ trap 'rm -f "$deb"' EXIT
 pkg="$(dpkg-deb -f "$deb" Package)"
 deb_version="$(dpkg-deb -f "$deb" Version)"
 if [[ "$deb_version" != "$expected" ]]; then
-  log "$deb is version '$deb_version', expected '$expected'"
+  log ERROR deploy.app ".deb version mismatch" path="$deb" version="$deb_version" \
+    expected="$expected"
   exit 1
 fi
 
-log "installing $pkg $expected (previous: ${prev_version:-none})"
+log INFO deploy.app "deploy started" package="$pkg" version="$expected" protocol="$protocol" \
+  previous="${prev_version:-none}"
 if install "$deb" && [[ "$(installed "$pkg")" == "$expected" ]]; then
   # Promote only now: the old current becomes previous, the candidate becomes current.
   prev_kept=""
@@ -71,17 +94,18 @@ EOF
   # Prune anything else (e.g. debs kept under their release names by older deploys).
   find "$dir/app" -maxdepth 1 -name '*.deb' ! -path "$current" ! -path "$previous" -delete
   [[ -n "$prev_kept" ]] || rm -f "$previous"
-  log "installed $pkg $expected; it takes effect on the next app start"
+  log INFO deploy.app "deployed; takes effect on the next app start" version="$expected"
   exit 0
 fi
 
-log "FAILED (installed: '$(installed "$pkg")')"
+log ERROR deploy.app "deploy failed" version="$expected" installed="$(installed "$pkg")"
 if [[ -n "$prev_deb" && -f "$prev_deb" ]]; then
-  log "rolling back to $prev_version"
+  log WARN rollback "rolling back" to="$prev_version"
   if install "$prev_deb" && [[ "$(installed "$pkg")" == "$prev_version" ]]; then
-    log "rolled back to app $prev_version"
+    log INFO rollback "rolled back" version="$prev_version"
   else
-    log "ROLLBACK FAILED too; the app needs manual attention"
+    log ERROR rollback "rollback failed too; the app needs manual attention" \
+      to="$prev_version"
   fi
 fi
 exit 1

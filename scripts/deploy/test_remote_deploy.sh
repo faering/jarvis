@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tests for the Pi deploy scripts (jarvis-deploy-agent, remote-{app,state}.sh,
-# jarvis-install-app) against stubbed docker / sudo / apt / dpkg.
+# jarvis-install-app) and their logging (scripts/lib/log.sh) against stubbed
+# docker / sudo / apt / dpkg.
 # Usage: scripts/deploy/test_remote_deploy.sh   (exits non-zero on any failure)
 set -euo pipefail
 
@@ -65,6 +66,10 @@ cat >"$bin/dpkg-query" <<'EOF'
 EOF
 chmod +x "$bin"/*
 export PATH="$bin:$PATH" AGENT_HEALTH_TIMEOUT=5 HERE="$here"
+# The shared logger, installed like the Pi setup does (not group/world-writable).
+install -d -m 755 "$tmp/lib"
+install -m 644 "$here/../lib/log.sh" "$tmp/lib/log.sh"
+export JARVIS_LOG_LIB="$tmp/lib/log.sh"
 
 pass=0
 fail=0
@@ -86,7 +91,11 @@ fresh() { # fresh pi dirs + stub state: ~deploy/jarvis, /opt/jarvis, /var/lib/ja
   mkdir -p "$JARVIS_DIR/incoming" "$STUB" "$JARVIS_OPT_DIR"
   chmod 755 "$JARVIS_OPT_DIR"
   install -m 644 /dev/null "$JARVIS_OPT_DIR/docker-compose.yml"
+  export JARVIS_LOG_DIR="$root/var/log/jarvis"
+  install -d -m 2775 "$JARVIS_LOG_DIR"
 }
+logfile() { echo "$JARVIS_LOG_DIR/jarvis-deploy-$(date -u +%F).log"; }
+logged() { grep -qF -- "$1" "$(logfile)" 2>/dev/null; } # logged <text>
 # As deploy.yml runs it: ssh pi sudo -n /usr/local/sbin/jarvis-deploy-agent deploy ...
 agent() { sudo -n /usr/local/sbin/jarvis-deploy-agent deploy "$1" "$2" 0 >/dev/null 2>&1; }
 app() { bash "$here/remote-app.sh" "$1" "$2" 0 >/dev/null 2>&1; }
@@ -222,6 +231,64 @@ deb "$home/elsewhere/good.deb" 1.0.0
 mv "$home/jarvis/app" "$home/jarvis/app.real" && ln -s "$home/elsewhere" "$home/jarvis/app"
 ok "installer refuses a symlinked directory" not installer "$home/jarvis/app/good.deb"
 rm "$home/jarvis/app" && mv "$home/jarvis/app.real" "$home/jarvis/app"
+
+# --- logging (docs/logging.md) ---
+fresh log-agent
+agent 1.0.0 1.0.0
+ok "log: agent deploy writes the deploy component's daily file" test -f "$(logfile)"
+ok "log: file is 0640" test "$(stat -c %a "$(logfile)")" == 640
+ok "log: spec line with attributes" \
+  logged "[INFO ] [deploy] [deploy.agent] [--------] deployed  version=1.0.0 tag=1.0.0"
+echo 2.0.0 >"$STUB/bad"
+agent 2.0.0 2.0.0 || true
+ok "log: rollback logged under its own logger" \
+  logged "[WARN ] [deploy] [rollback] [--------] deploy failed, rolling back  version=2.0.0 to=1.0.0"
+ok "log: failed health check is an ERROR" logged "[ERROR] [deploy] [deploy.agent] [--------] container is unhealthy"
+ok "log: every line is a record jarvis-logs reads" \
+  test "$(python3 "$here/../logs/jarvis-logs" --dir "$JARVIS_LOG_DIR" | wc -l)" == "$(wc -l <"$(logfile)")"
+ok "log: jarvis-logs finds the rollback at WARN" \
+  grep -q '\[rollback\]' <(python3 "$here/../logs/jarvis-logs" --dir "$JARVIS_LOG_DIR" --level WARN)
+ok "log: lines also go to stderr" \
+  grep -q '\[ERROR\] \[deploy\] \[deploy.agent\]' <(sudo -n /usr/local/sbin/jarvis-deploy-agent deploy x 1.0.0 0 2>&1)
+ok "log: stdout of 'state' stays clean" \
+  test "$(sudo -n /usr/local/sbin/jarvis-deploy-agent state 2>/dev/null | grep -cv '^[A-Z_]*=')" == 0
+
+fresh log-nodir
+rmdir "$JARVIS_LOG_DIR"
+ok "log: a missing log folder never fails a deploy" agent 1.0.0 1.0.0
+ok "log: ...and creates nothing" test ! -e "$JARVIS_LOG_DIR"
+
+fresh log-symlink
+echo keep >"$tmp/victim"
+ln -s "$tmp/victim" "$(logfile)"
+ok "log: deploy succeeds next to a symlinked log file" agent 1.0.0 1.0.0
+ok "log: never writes through a symlink" test "$(cat "$tmp/victim")" == keep
+rm "$(logfile)" && mkfifo "$(logfile)"
+ok "log: never blocks on a FIFO" timeout 20 bash -c 'sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.1.0 1.1.0 0 >/dev/null 2>&1'
+
+fresh log-untrusted
+chmod g+w "$JARVIS_LOG_LIB"
+out="$(sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 0 2>&1)" && rc=0 || rc=$?
+chmod g-w "$JARVIS_LOG_LIB"
+ok "log: a group-writable logger is not sourced (deploy still succeeds)" test "$rc" == 0
+ok "log: ...it says so on stderr" grep -q "shared logger missing or untrusted" <<<"$out"
+ok "log: ...and nothing reaches the file" test ! -e "$(logfile)"
+
+fresh log-installer
+deb "$JARVIS_DIR/incoming/ok.deb" 3.0.0
+JARVIS_INSTALL_HOME="${JARVIS_DIR%/jarvis}" APT_GET=fake-apt bash "$here/jarvis-install-app" \
+  "$JARVIS_DIR/incoming/ok.deb" >/dev/null 2>&1 || true
+ok "log: installer logs install.app" \
+  logged "[INFO ] [deploy] [install.app] [--------] installed  package=jarvis version=3.0.0"
+JARVIS_INSTALL_HOME="${JARVIS_DIR%/jarvis}" APT_GET=fake-apt bash "$here/jarvis-install-app" \
+  "/etc/evil path.deb" >/dev/null 2>&1 || true
+ok "log: installer refusals are ERRORs, values quoted" \
+  logged '[ERROR] [deploy] [install.app] [--------] refusing a .deb outside'
+ok "log: ...with the path quoted" logged 'path="/etc/evil path.deb"'
+deb "$JARVIS_DIR/incoming/a.deb" 1.0.0
+ok "log: remote-app logs deploy.app to stderr" \
+  grep -qF '[INFO ] [deploy] [deploy.app] [--------] deploy started' \
+  <(bash "$here/remote-app.sh" "$JARVIS_DIR/incoming/a.deb" 1.0.0 0 2>&1)
 
 echo "$pass passed, $fail failed"
 ((fail == 0))

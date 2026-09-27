@@ -5,6 +5,7 @@
 # ~/jarvis/{incoming,app}/, and nothing else.
 #
 # Usage:  sudo -n /usr/local/sbin/jarvis-install-app <path-to-jarvis.deb>
+# Logs to /var/log/jarvis/jarvis-deploy-<UTC date>.log (docs/logging.md) and stderr.
 set -euo pipefail
 
 [[ $# -eq 1 ]] || {
@@ -12,23 +13,47 @@ set -euo pipefail
   exit 2
 }
 # Test hooks only; never honoured as root (sudo also resets the environment).
-if [[ $EUID -eq 0 ]]; then unset JARVIS_INSTALL_HOME APT_GET; fi
+if [[ $EUID -eq 0 ]]; then
+  unset JARVIS_INSTALL_HOME APT_GET JARVIS_LOG_LIB JARVIS_LOG_DIR JARVIS_LOG_COMPONENT JARVIS_LOG_TURN
+fi
+
+# Shared logger (scripts/lib/log.sh): sourced only if root owns it and its folder and nobody
+# else can write them; otherwise a stderr-only fallback. Logging never fails an install.
+log_lib="${JARVIS_LOG_LIB:-/usr/local/lib/jarvis/log.sh}"
+lib_ok() {
+  local p owner mode
+  for p in "$1" "$(dirname "$1")"; do
+    [[ -e "$p" && ! -L "$p" ]] || return 1
+    read -r owner mode < <(stat -c '%u %a' "$p")
+    [[ "$owner" == 0 || "$owner" == "$EUID" ]] && (((8#$mode & 8#022) == 0)) || return 1
+  done
+}
+if lib_ok "$log_lib"; then
+  # shellcheck source=../lib/log.sh
+  . "$log_lib"
+else
+  log() {
+    printf '[%s] [%-5s] [deploy] [%s] [--------] %s\n' \
+      "$(date -u '+%F %T.%3NZ')" "$1" "$2" "${*:3}" >&2
+  }
+  log WARN install.app "shared logger missing or untrusted; logging to stderr only" path="$log_lib"
+fi
+refuse() { # refuse <message> [key=value ...]
+  log ERROR install.app "$@"
+  exit 1
+}
 user="${SUDO_USER:-$(id -un)}"
 home="${JARVIS_INSTALL_HOME:-$(getent passwd "$user" | cut -d: -f6)}"
 
 # The path must be literally <home>/jarvis/{incoming,app}/<name>.deb: no "..", no deeper dirs.
 case "$1" in
   "$home/jarvis/incoming/"* | "$home/jarvis/app/"*) ;;
-  *)
-    echo "refusing $1: not under $home/jarvis/{incoming,app}/" >&2
-    exit 1
-    ;;
+  *) refuse "refusing a .deb outside ~/jarvis/{incoming,app}/" path="$1" ;;
 esac
 rel="${1#"$home"/jarvis/}"
 sub="${rel%%/*}" name="${rel#*/}"
 if [[ "$name" == */* || "$name" == .* || "$name" != *.deb ]]; then
-  echo "refusing $1: expected a .deb directly in $home/jarvis/$sub/" >&2
-  exit 1
+  refuse "refusing: expected a .deb directly in ~/jarvis/$sub/" path="$1"
 fi
 
 # Copy the bytes into a root-owned private file. Every path component below the (root-owned)
@@ -37,7 +62,7 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 deb="$work/jarvis.deb"
-python3 - "$home" "$sub" "$name" "$deb" <<'PY'
+python3 - "$home" "$sub" "$name" "$deb" <<'PY' || refuse "refusing: could not copy the .deb" path="$1"
 import os, shutil, stat, sys
 home, sub, name, dest = sys.argv[1:]
 nofollow = os.O_RDONLY | os.O_NOFOLLOW
@@ -50,11 +75,16 @@ if not stat.S_ISREG(os.fstat(src).st_mode):
 with os.fdopen(src, "rb") as fsrc, open(dest, "xb") as fdst:
     shutil.copyfileobj(fsrc, fdst)
 PY
-[[ -f "$deb" && ! -L "$deb" ]] || exit 1
+[[ -f "$deb" && ! -L "$deb" ]] || refuse "refusing: no private copy of the .deb" path="$1"
 
 pkg="$(dpkg-deb -f "$deb" Package)"
-[[ "$pkg" == jarvis ]] || {
-  echo "refusing $1: package '$pkg' is not 'jarvis'" >&2
-  exit 1
-}
-"${APT_GET:-apt-get}" install -y --allow-downgrades "$deb"
+[[ "$pkg" == jarvis ]] || refuse "refusing: package is not 'jarvis'" path="$1" package="$pkg"
+version="$(dpkg-deb -f "$deb" Version)"
+log INFO install.app "installing" package="$pkg" version="$version" path="$1"
+if "${APT_GET:-apt-get}" install -y --allow-downgrades "$deb"; then
+  log INFO install.app "installed" package="$pkg" version="$version"
+else
+  rc=$?
+  log ERROR install.app "apt-get install failed" package="$pkg" version="$version" exit_code="$rc"
+  exit "$rc"
+fi
