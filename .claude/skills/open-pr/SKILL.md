@@ -26,3 +26,5 @@ lines** (see [[feedback-no-attribution]] and [[feedback-always-pr]]).
 - Merges are **rebase-only**; `main` requires a PR (the "main protection" ruleset). Never
   merge a PR unless asked.
 - If several unrelated concerns are staged, split them into separate PRs.
+- After opening the PR, run `roadmap sync` for the issue(s) it closes: a target date that is
+  already past gets reported (the slip is useful information), not silently moved.

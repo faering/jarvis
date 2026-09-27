@@ -33,6 +33,9 @@ GitHub MCP** (`mcp__github__*`), not `gh` (see [[reference-github-token-split]] 
    `status:*` label to `status:in-progress` via `issue_write update`.
 5. **Self-assign** — `issue_write update` with `assignees: ["faering"]` (confirm the login
    with `get_me` if unsure).
+6. **Roadmap** — per the `roadmap` skill (rule 4): `Start date` = today, `Sprint` = current
+   sprint, and a provisional `Target date` if none is set. Tell the user the target you
+   picked so it can be challenged.
 
 ## Then
 Implement, committing per the Conventional-Commits + commit↔issue rules in AGENTS.md, and
