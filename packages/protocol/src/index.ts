@@ -43,6 +43,21 @@ export interface HelloPayload {
   agent: string;
 }
 
+/**
+ * The payload key carrying the W3C trace id of the voice turn or request a frame
+ * belongs to (state, transcript, reply, error). The agent creates it; both sides
+ * log it so one turn can be followed across agent and app (docs/logging.md).
+ */
+export const TRACE_ID_KEY = "trace_id";
+
+const TRACE_ID = /^[0-9a-f]{32}$/;
+
+/** The frame's trace id, or null when it has none (or a malformed one). */
+export function traceIdOf(payload: Record<string, unknown>): string | null {
+  const id = payload[TRACE_ID_KEY];
+  return typeof id === "string" && TRACE_ID.test(id) ? id : null;
+}
+
 export interface ErrorPayload {
   code: string;
   message: string;

@@ -19,6 +19,7 @@ from jarvis_agent.protocol import PROTOCOL_VERSION, Envelope
 SCHEMA_PATH = Path(__file__).resolve().parents[2] / "packages/protocol/protocol.schema.json"
 SCHEMA: dict[str, Any] = json.loads(SCHEMA_PATH.read_text())
 DEFS: dict[str, Any] = SCHEMA["$defs"]
+TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 
 _JSON_TYPES = {str: "string", int: "integer", bool: "boolean", float: "number"}
 
@@ -136,6 +137,7 @@ def test_schema_examples_are_valid_envelopes(kind: str, example: dict[str, Any])
         ("reply", {"done": True, "degraded": False}),
         ("reply", {"delta": "Hel", "done": True, "degraded": False}),
         ("reply", {"text": "Hello!", "done": True}),
+        ("state", {"state": "idle", "trace_id": "4BF92F35"}),
     ],
 )
 def test_schema_rejects_bad_payloads(kind: str, payload: dict[str, Any]) -> None:
@@ -148,8 +150,13 @@ def test_schema_rejects_bad_payloads(kind: str, payload: dict[str, Any]) -> None
         protocol.hello("1.2.3"),
         protocol.pong(Envelope(v=PROTOCOL_VERSION, type="ping", id="p-1")),
         protocol.error("bad_json", "frame is not valid JSON", "r-1"),
+        protocol.error("route_failed", "no backend", trace_id=TRACE_ID),
+        protocol.state("listening", trace_id=TRACE_ID),
+        protocol.transcript("hello", trace_id=TRACE_ID),
+        protocol.reply(delta="Hel", done=False, degraded=False, trace_id=TRACE_ID),
+        protocol.reply(text="Hello!", done=True, degraded=False, trace_id=TRACE_ID),
     ],
-    ids=lambda frame: frame.type,
+    ids=lambda frame: frame.type + ("+trace" if "trace_id" in frame.payload else ""),
 )
 def test_agent_frames_match_schema(frame: Envelope) -> None:
     assert _conforms(frame.payload, DEFS[frame.type])

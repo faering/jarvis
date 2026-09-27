@@ -72,22 +72,33 @@ def pong(request: Envelope) -> Envelope:
     return Envelope(v=PROTOCOL_VERSION, type="pong", id=request.id)
 
 
-def error(code: str, message: str, request_id: str | None = None) -> Envelope:
+def _traced(payload: dict[str, Any], trace_id: str | None) -> dict[str, Any]:
+    """Add the turn's ``trace_id`` (docs/logging.md) when there is one."""
+    if trace_id is not None:
+        payload["trace_id"] = trace_id
+    return payload
+
+
+def error(
+    code: str, message: str, request_id: str | None = None, *, trace_id: str | None = None
+) -> Envelope:
     return Envelope(
         v=PROTOCOL_VERSION,
         type="error",
         id=request_id,
-        payload={"code": code, "message": message},
+        payload=_traced({"code": code, "message": message}, trace_id),
     )
 
 
-def state(value: str) -> Envelope:
+def state(value: str, *, trace_id: str | None = None) -> Envelope:
     """The voice loop's state: idle | listening | routing | speaking | offloaded."""
-    return Envelope(v=PROTOCOL_VERSION, type="state", payload={"state": value})
+    return Envelope(v=PROTOCOL_VERSION, type="state", payload=_traced({"state": value}, trace_id))
 
 
-def transcript(text: str) -> Envelope:
-    return Envelope(v=PROTOCOL_VERSION, type="transcript", payload={"text": text})
+def transcript(text: str, *, trace_id: str | None = None) -> Envelope:
+    return Envelope(
+        v=PROTOCOL_VERSION, type="transcript", payload=_traced({"text": text}, trace_id)
+    )
 
 
 def reply(
@@ -97,6 +108,7 @@ def reply(
     done: bool,
     degraded: bool,
     spoken: bool = True,
+    trace_id: str | None = None,
 ) -> Envelope:
     """Reply text: ``delta`` frames while streaming, then one ``done`` frame with ``text``.
     ``spoken: false`` is added only when the reply was not (fully) accepted for speech, or
@@ -108,4 +120,4 @@ def reply(
         payload["delta"] = delta
     if text is not None:
         payload["text"] = text
-    return Envelope(v=PROTOCOL_VERSION, type="reply", payload=payload)
+    return Envelope(v=PROTOCOL_VERSION, type="reply", payload=_traced(payload, trace_id))

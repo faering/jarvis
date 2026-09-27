@@ -10,6 +10,8 @@ import {
   MESSAGE_TYPES,
   parseEnvelope,
   PROTOCOL_VERSION,
+  TRACE_ID_KEY,
+  traceIdOf,
 } from "./index.ts";
 
 interface PayloadDef {
@@ -146,11 +148,34 @@ describe("payload guards", () => {
   });
 
   it("guards exactly the fields the schema defines", () => {
-    expect(Object.keys(def("hello").properties).sort()).toEqual(
-      Object.keys(hello).sort(),
-    );
-    expect(Object.keys(def("error").properties).sort()).toEqual(
-      Object.keys(error).sort(),
-    );
+    // trace_id is read by traceIdOf, for every turn payload alike.
+    const fields = (type: string) =>
+      Object.keys(def(type).properties)
+        .filter((k) => k !== TRACE_ID_KEY)
+        .sort();
+    expect(fields("hello")).toEqual(Object.keys(hello).sort());
+    expect(fields("error")).toEqual(Object.keys(error).sort());
+  });
+});
+
+describe("trace id", () => {
+  const traced = def("state").examples.find((e) => TRACE_ID_KEY in e)!;
+
+  it.each(["error", "state", "transcript", "reply"])(
+    "%s may carry the trace id pattern traceIdOf accepts",
+    (type) => {
+      const prop: unknown = def(type).properties[TRACE_ID_KEY];
+      expect(prop).toMatchObject({ pattern: "^[0-9a-f]{32}$" });
+    },
+  );
+
+  it("reads the trace id from the schema example", () => {
+    expect(traceIdOf(traced)).toBe(traced[TRACE_ID_KEY]);
+  });
+
+  it("returns null when absent or malformed", () => {
+    expect(traceIdOf({ state: "idle" })).toBeNull();
+    expect(traceIdOf({ trace_id: "4BF92F35" })).toBeNull();
+    expect(traceIdOf({ trace_id: 42 })).toBeNull();
   });
 });
