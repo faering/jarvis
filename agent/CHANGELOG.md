@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/faering/jarvis/compare/agent-v0.4.0...agent-v0.5.0) (2026-09-28)
+
+
+### Features
+
+* **agent:** the home Pi uses qwen2.5-1.5b; models pull --assigned ([199d293](https://github.com/faering/jarvis/commit/199d293d6e51e71308991cb8e1ec914847bd5f27)), closes [#159](https://github.com/faering/jarvis/issues/159)
+
 ## [0.4.0](https://github.com/faering/jarvis/compare/agent-v0.3.0...agent-v0.4.0) (2026-09-28)
 
 
