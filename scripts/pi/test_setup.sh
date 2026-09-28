@@ -43,7 +43,8 @@ stub gpg <<'EOF'
 #!/usr/bin/env bash
 [[ -s "${!#}" ]] || exit 2
 grep -q bogus "${!#}" && { echo "fpr:::::::::0000:"; exit 0; }
-printf 'fpr:::::::::%s:\n' 9DC858229FC7DD38854AE2D88D81803C0EBFCD88 2596A99EAAB33821893C0A79458CA832957F5868
+printf 'fpr:::::::::%s:\n' 9DC858229FC7DD38854AE2D88D81803C0EBFCD88 2596A99EAAB33821893C0A79458CA832957F5868 \
+  7F38BBB59D064DBCB3D84D725612B36462313325
 EOF
 stub systemctl <<'EOF'
 #!/usr/bin/env bash
@@ -53,6 +54,8 @@ case "$1" in
   is-active) exit 3 ;; # nothing running, so nothing gets reloaded
   enable) echo enabled >"$STUB/units/${!#}" ;;
   disable) echo disabled >"$STUB/units/${!#}" ;;
+  start) [[ "${!#}" != jarvis-attest-root.service || -e "$STUB/no_network" ]] ||
+    echo '{"mediaType":"trusted-root"}' >"$JARVIS_ROOT/var/lib/jarvis/attest/trusted_root.jsonl" ;;
 esac
 exit 0
 EOF
@@ -121,6 +124,7 @@ new_pi() { # new_pi <name>: sets R, S, REPO
     "$REPO/scripts/lib" "$REPO/scripts/logs"
   cp "$here/setup.sh" "$REPO/scripts/pi/"
   cp "$src/scripts/lib/log.sh" "$REPO/scripts/lib/"
+  cp "$src/scripts/lib/verify.sh" "$src/scripts/lib/refresh-trusted-root" "$REPO/scripts/lib/"
   cp "$src/scripts/logs/jarvis-logs" "$REPO/scripts/logs/"
   cp "$src/scripts/deploy/jarvis-install-app" "$REPO/scripts/deploy/"
   cp "$src/deploy/pi/docker-compose.yml" "$REPO/deploy/pi/"
@@ -241,6 +245,19 @@ check "logger folder 755" mode /usr/local/lib/jarvis 755
 check "logger is the repo copy" cmp -s "$src/scripts/lib/log.sh" "$R/usr/local/lib/jarvis/log.sh"
 check "jarvis-logs installed 755" mode /usr/local/bin/jarvis-logs 755
 check "jarvis-logs is the repo copy" cmp -s "$src/scripts/logs/jarvis-logs" "$R/usr/local/bin/jarvis-logs"
+# release provenance (#121)
+check "gh apt repo, signed by its pinned key" has /etc/apt/sources.list.d/github-cli.list \
+  "deb [arch=arm64 signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"
+check "gh key installed" test -s "$R/etc/apt/keyrings/githubcli-archive-keyring.gpg"
+check "gh installed" grep -qx gh "$S/installed"
+check "verifier is the repo copy" cmp -s "$src/scripts/lib/verify.sh" "$R/usr/local/lib/jarvis/verify.sh"
+check "verifier 644" mode /usr/local/lib/jarvis/verify.sh 644
+check "trusted-root refresher is the repo copy" \
+  cmp -s "$src/scripts/lib/refresh-trusted-root" "$R/usr/local/lib/jarvis/refresh-trusted-root"
+check "trusted-root refresher 755" mode /usr/local/lib/jarvis/refresh-trusted-root 755
+check "trusted-root service is sandboxed" has /etc/systemd/system/jarvis-attest-root.service "ProtectSystem=strict"
+check "trusted-root timer enabled" grep -qx enabled "$S/units/jarvis-attest-root.timer"
+check "trusted root fetched on the first run" test -s "$R/var/lib/jarvis/attest/trusted_root.jsonl"
 f=/etc/systemd/system/jarvis-logs-prune.service
 check "prune service runs jarvis-logs prune" has $f "ExecStart=/usr/local/bin/jarvis-logs prune --dir /var/log/jarvis"
 check "prune service: throwaway user" has $f "DynamicUser=yes"

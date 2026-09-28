@@ -14,8 +14,10 @@ name: jarvis
 
 services:
   agent:
-    # The repository is fixed here, not interpolated: only the tag comes from deploy state.
-    image: ghcr.io/faering/jarvis-agent:${AGENT_IMAGE_TAG:?set by /var/lib/jarvis/agent.env}
+    # The repository is fixed here, not interpolated: only tag + digest come from deploy state.
+    # Pinned by digest once jarvis-deploy-agent has verified its provenance (#121); state
+    # from before #121 has no digest, so a rollback to it pulls by tag.
+    image: ghcr.io/faering/jarvis-agent:${AGENT_IMAGE_TAG:?set by /var/lib/jarvis/agent.env}${AGENT_IMAGE_DIGEST:+@}${AGENT_IMAGE_DIGEST:-}
     restart: unless-stopped
     env_file:
       - path: agent.env

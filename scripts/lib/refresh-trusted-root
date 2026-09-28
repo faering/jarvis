@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Refresh the Sigstore trusted root that verify.sh checks release artifacts against (#121).
+# Setup installs this root-owned as /usr/local/lib/jarvis/refresh-trusted-root and runs it
+# daily (jarvis-attest-root.timer). No GitHub token needed. The old file is kept if the
+# download fails or isn't valid JSON lines.
+set -euo pipefail
+dir="${JARVIS_ATTEST_DIR:-/var/lib/jarvis/attest}"
+gh="${JARVIS_GH:-/usr/bin/gh}"
+if [[ $EUID -eq 0 ]]; then # test hooks are never honoured as root
+  dir=/var/lib/jarvis/attest gh=/usr/bin/gh
+fi
+tmp="$(mktemp "$dir/trusted_root.XXXXXX")"
+home="$(mktemp -d)"
+trap 'rm -rf "$tmp" "$home"' EXIT
+env -i PATH=/usr/bin:/bin HOME="$home" "$gh" attestation trusted-root >"$tmp"
+[[ -s "$tmp" ]] || {
+  echo "refresh-trusted-root: empty trusted root" >&2
+  exit 1
+}
+while IFS= read -r line; do
+  jq -e . >/dev/null <<<"$line" || {
+    echo "refresh-trusted-root: not JSON lines" >&2
+    exit 1
+  }
+done <"$tmp"
+chmod 644 "$tmp"
+mv -f "$tmp" "$dir/trusted_root.jsonl"
+echo "trusted root refreshed ($(wc -l <"$dir/trusted_root.jsonl") entries)"

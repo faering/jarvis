@@ -46,8 +46,11 @@ flowchart LR
   `Jarvis_<version>_{amd64,arm64}.deb`. Each release also gets a `manifest.json` (version,
   revision, protocol; the agent's image digest). Nothing builds unless the tagged commit's
   `ci-ok` passed. Every artifact gets a signed build-provenance attestation (Sigstore), with
-  its bundle attached as `<artifact>.sigstore.json`; the Pi verifies it before installing
-  (#121). Check one by hand: `gh attestation verify <file> --repo faering/jarvis`.
+  its bundle attached as `<artifact>.sigstore.json`. The Pi verifies it offline before
+  installing (#121): the app's `.deb` against its bundle, the agent image by digest (the
+  deploy stages its raw manifest and bundle; docker then pulls exactly that digest). No
+  evidence or a failed check = no install, and the running version stays. A release built
+  before #121 has none: rebuild it (Actions → release-artifacts → Run workflow → its tag). Check one by hand: `gh attestation verify <file> --repo faering/jarvis`.
 - **Integration test** (`integration` job in `ci-ok`; `scripts/integration-test.sh`, add
   `IT_NETWORK=1` in the devcontainer): the app's real `AgentClient` against the agent
   container, plus each side against the other's latest release (agent: GHCR image, else

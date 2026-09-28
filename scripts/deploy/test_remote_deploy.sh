@@ -72,6 +72,25 @@ export PATH="$bin:$PATH" AGENT_HEALTH_TIMEOUT=5 HERE="$here"
 install -d -m 755 "$tmp/lib"
 install -m 644 "$here/../lib/log.sh" "$tmp/lib/log.sh"
 export JARVIS_LOG_LIB="$tmp/lib/log.sh"
+# Provenance (#121): the real verify.sh, with a fake gh that accepts a bundle only if it
+# reads "ok:<sha256 of the artifact>" and the expected repo/workflow/trusted-root flags.
+install -m 644 "$here/../lib/verify.sh" "$tmp/lib/verify.sh"
+echo '{"mediaType":"trusted-root"}' >"$tmp/trusted_root.jsonl"
+cat >"$bin/fake-gh" <<'EOF'
+#!/usr/bin/env bash
+[[ "$1 $2" == "attestation verify" ]] || exit 2
+file="$3" args=" ${*:4} "
+bundle="$(sed -n 's/.* --bundle \([^ ]*\) .*/\1/p' <<<"$args")"
+[[ "$args" == *" --repo faering/jarvis "* ]] || exit 3
+[[ "$args" == *" --signer-workflow faering/jarvis/.github/workflows/release-artifacts.yml "* ]] || exit 3
+[[ "$args" == *" --custom-trusted-root "* && "$args" == *" --deny-self-hosted-runners "* ]] || exit 3
+[[ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]] || exit 4 # verify.sh runs gh with a clean env
+[[ "$(cat "$bundle")" == "ok:$(sha256sum "$file" | cut -d' ' -f1)" ]]
+EOF
+chmod +x "$bin/fake-gh"
+export JARVIS_VERIFY_LIB="$tmp/lib/verify.sh" JARVIS_GH="$bin/fake-gh" \
+  JARVIS_TRUSTED_ROOT="$tmp/trusted_root.jsonl" GH_TOKEN=must-not-reach-gh
+attest() { echo "ok:$(sha256sum "$1" | cut -d' ' -f1)" >"$2"; } # attest <file> <bundle>
 
 pass=0
 fail=0
@@ -90,6 +109,7 @@ fresh() { # fresh pi dirs + stub state: ~deploy/jarvis, /opt/jarvis, /var/lib/ja
   local root="$tmp/pi/$1"
   export JARVIS_DIR="$root/home/jarvis" STUB="$tmp/stub/$1" \
     JARVIS_OPT_DIR="$root/opt/jarvis" JARVIS_STATE_DIR="$root/var/lib/jarvis"
+  export JARVIS_INSTALL_HOME="$root/home"
   mkdir -p "$JARVIS_DIR/incoming" "$STUB" "$JARVIS_OPT_DIR"
   chmod 755 "$JARVIS_OPT_DIR"
   install -m 644 /dev/null "$JARVIS_OPT_DIR/docker-compose.yml"
@@ -99,10 +119,28 @@ fresh() { # fresh pi dirs + stub state: ~deploy/jarvis, /opt/jarvis, /var/lib/ja
 logfile() { echo "$JARVIS_LOG_DIR/jarvis-deploy-$(date -u +%F).log"; }
 logged() { grep -qF -- "$1" "$(logfile)" 2>/dev/null; } # logged <text>
 # As deploy.yml runs it: ssh pi sudo -n /usr/local/sbin/jarvis-deploy-agent deploy ...
-agent() { sudo -n /usr/local/sbin/jarvis-deploy-agent deploy "$1" "$2" 0 >/dev/null 2>&1; }
+stage() { # stage <tag>: stage the image's provenance evidence; prints its digest
+  local man hex
+  man="$STUB/manifest-$1.json"
+  printf '{"image":"%s"}\n' "$1" >"$man"
+  hex="$(sha256sum "$man" | cut -d' ' -f1)"
+  if [[ -z "${NO_EVIDENCE:-}" ]]; then
+    cp "$man" "$JARVIS_DIR/incoming/agent-$hex.manifest.json"
+    attest "$man" "$JARVIS_DIR/incoming/agent-$hex.sigstore.json"
+    [[ -z "${BAD_BUNDLE:-}" ]] || echo "ok:0000" >"$JARVIS_DIR/incoming/agent-$hex.sigstore.json"
+    [[ -z "${WRONG_MANIFEST:-}" ]] || echo other >"$JARVIS_DIR/incoming/agent-$hex.manifest.json"
+  fi
+  echo "sha256:$hex"
+}
+agent() { # agent <tag> <version>: deploy by digest, with the evidence staged
+  local digest
+  digest="$(stage "$1")"
+  sudo -n /usr/local/sbin/jarvis-deploy-agent deploy "$1" "$2" 0 "$digest" >/dev/null 2>&1
+}
 app() { bash "$here/remote-app.sh" "$1" "$2" 0 >/dev/null 2>&1; }
-deb() { # deb <path> <version> [fail]
+deb() { # deb <path> <version> [fail]: a fake .deb plus its provenance bundle (#121)
   printf 'Package=jarvis\nVersion=%s\nFAIL=%s\n' "$2" "${3:-0}" >"$1"
+  attest "$1" "$1.sigstore.json"
 }
 not() { ! "$@"; }
 has() { grep -q "^$2=$3\$" "$1" 2>/dev/null; }
@@ -148,8 +186,23 @@ ok "agent: ... and keeps the old state" has "$JARVIS_STATE_DIR/agent.env" AGENT_
 rm "$STUB/pullfail"
 
 fresh agent-old-compose
-ok "agent: a compose file without ollama still deploys" env STUB_NO_OLLAMA=1 bash -c "$(declare -f agent); agent 1.0.0 1.0.0"
+ok "agent: a compose file without ollama still deploys" env STUB_NO_OLLAMA=1 bash -c "$(declare -f attest stage agent); agent 1.0.0 1.0.0"
 ok "agent: ... and pulls no models" not grep -q 'pull --assigned' "$STUB/docker.log"
+
+fresh agent-provenance
+ok "provenance: a verified image deploys" agent 1.0.0 1.0.0
+ok "provenance: state pins the digest" grep -q '^AGENT_IMAGE_DIGEST=sha256:[0-9a-f]\{64\}$' "$JARVIS_STATE_DIR/agent.env"
+: >"$STUB/docker.log"
+ok "provenance: no staged evidence fails the deploy" not env NO_EVIDENCE=1 bash -c "$(declare -f attest stage agent); agent 2.0.0 2.0.0"
+ok "provenance: ... before anything reaches docker" not grep -q . "$STUB/docker.log"
+ok "provenance: ... and keeps the running agent" has "$STUB/running.env" AGENT_IMAGE_TAG 1.0.0
+ok "provenance: a bundle that doesn't verify fails" not env BAD_BUNDLE=1 bash -c "$(declare -f attest stage agent); agent 2.0.0 2.0.0"
+ok "provenance: a manifest that isn't the digest fails" not env WRONG_MANIFEST=1 bash -c "$(declare -f attest stage agent); agent 2.0.0 2.0.0"
+ok "provenance: no verifier installed fails closed" not env JARVIS_VERIFY_LIB=/nonexistent bash -c "$(declare -f attest stage agent); agent 2.0.0 2.0.0"
+ok "provenance: no trusted root fails closed" not env JARVIS_TRUSTED_ROOT=/nonexistent bash -c "$(declare -f attest stage agent); agent 2.0.0 2.0.0"
+ok "provenance: refuses a malformed digest" \
+  not sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 2.0.0 2.0.0 0 sha256:xyz 2>/dev/null
+ok "provenance: still on 1.0.0 after every refusal" has "$JARVIS_STATE_DIR/agent.env" AGENT_IMAGE_TAG 1.0.0
 
 fresh agent-validate
 for t in x/y a:b ../ ../../etc '' '1.0.0 x' 1.0.0:latest ghcr.io/evil/x:1.0.0 1.0.0/../x \
@@ -159,9 +212,9 @@ done
 ok "agent: refuses a tag that isn't its version's" not agent 1.0.1 1.0.0
 ok "agent: refuses a malformed version" not agent 1.0.0 '1.0.0 x'
 ok "agent: refuses a malformed protocol" \
-  not sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 '1;x' 2>/dev/null
+  not sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 '1;x' sha256:0000000000000000000000000000000000000000000000000000000000000000 2>/dev/null
 ok "agent: refuses extra arguments" \
-  not sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 0 x 2>/dev/null
+  not sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 0 sha256:0000000000000000000000000000000000000000000000000000000000000000 x 2>/dev/null
 ok "agent: refuses an unknown subcommand" not sudo -n /usr/local/sbin/jarvis-deploy-agent rollback 2>/dev/null
 ok "agent: refused tags never reach docker" not pulled
 chmod g+w "$JARVIS_OPT_DIR/docker-compose.yml"
@@ -214,6 +267,7 @@ ok "app: rolled back to the previous install" grep -qx 1.0.0 "$STUB/installed"
 
 deb "$JARVIS_DIR/incoming/3-a.deb" 2.0.0
 ok "app: upgrade succeeds" app "$JARVIS_DIR/incoming/3-a.deb" 2.0.0
+ok "app: keeps the provenance bundle next to the current .deb" test -s "$JARVIS_DIR/app/current.deb.sigstore.json"
 ok "app: upgrade keeps current + previous" \
   has "$JARVIS_DIR/app/current.deb" Version 2.0.0
 ok "app: previous.deb is the old current" has "$JARVIS_DIR/app/previous.deb" Version 1.0.0
@@ -245,6 +299,12 @@ mkdir -p "$home/jarvis/incoming/sub" && deb "$home/jarvis/incoming/sub/n.deb" 1.
 ok "installer refuses a nested path" not installer "$home/jarvis/incoming/sub/n.deb"
 mkdir -p "$home/jarvis/incoming/dir.deb"
 ok "installer refuses a directory" not installer "$home/jarvis/incoming/dir.deb"
+deb "$home/jarvis/incoming/nobundle.deb" 1.0.0 && rm "$home/jarvis/incoming/nobundle.deb.sigstore.json"
+ok "installer refuses a .deb without its provenance bundle" not installer "$home/jarvis/incoming/nobundle.deb"
+deb "$home/jarvis/incoming/forged.deb" 1.0.0 && echo "ok:0000" >"$home/jarvis/incoming/forged.deb.sigstore.json"
+ok "installer refuses a bundle that doesn't verify" not installer "$home/jarvis/incoming/forged.deb"
+ok "installer refuses without a trusted verifier" \
+  not env JARVIS_VERIFY_LIB=/nonexistent bash -c "$(declare -f installer); installer '$home/jarvis/incoming/good.deb'"
 # A directory swapped for a symlink (e.g. mid-deploy) must not redirect the copy.
 deb "$home/elsewhere/good.deb" 1.0.0
 mv "$home/jarvis/app" "$home/jarvis/app.real" && ln -s "$home/elsewhere" "$home/jarvis/app"
@@ -268,7 +328,7 @@ ok "log: every line is a record jarvis-logs reads" \
 ok "log: jarvis-logs finds the rollback at WARN" \
   grep -q '\[rollback\]' <(python3 "$here/../logs/jarvis-logs" --dir "$JARVIS_LOG_DIR" --level WARN)
 ok "log: lines also go to stderr" \
-  grep -q '\[ERROR\] \[deploy\] \[deploy.agent\]' <(sudo -n /usr/local/sbin/jarvis-deploy-agent deploy x 1.0.0 0 2>&1)
+  grep -q '\[ERROR\] \[deploy\] \[deploy.agent\]' <(sudo -n /usr/local/sbin/jarvis-deploy-agent deploy x 1.0.0 0 sha256:0000000000000000000000000000000000000000000000000000000000000000 2>&1)
 ok "log: stdout of 'state' stays clean" \
   test "$(sudo -n /usr/local/sbin/jarvis-deploy-agent state 2>/dev/null | grep -cv '^[A-Z_]*=')" == 0
 
@@ -283,11 +343,11 @@ ln -s "$tmp/victim" "$(logfile)"
 ok "log: deploy succeeds next to a symlinked log file" agent 1.0.0 1.0.0
 ok "log: never writes through a symlink" test "$(cat "$tmp/victim")" == keep
 rm "$(logfile)" && mkfifo "$(logfile)"
-ok "log: never blocks on a FIFO" timeout 20 bash -c 'sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.1.0 1.1.0 0 >/dev/null 2>&1'
+ok "log: never blocks on a FIFO" timeout 20 bash -c 'sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.1.0 1.1.0 0 '"$(stage 1.1.0)"' >/dev/null 2>&1'
 
 fresh log-untrusted
 chmod g+w "$JARVIS_LOG_LIB"
-out="$(sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 0 2>&1)" && rc=0 || rc=$?
+out="$(sudo -n /usr/local/sbin/jarvis-deploy-agent deploy 1.0.0 1.0.0 0 "$(stage 1.0.0)" 2>&1)" && rc=0 || rc=$?
 chmod g-w "$JARVIS_LOG_LIB"
 ok "log: a group-writable logger is not sourced (deploy still succeeds)" test "$rc" == 0
 ok "log: ...it says so on stderr" grep -q "shared logger missing or untrusted" <<<"$out"

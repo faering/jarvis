@@ -2,13 +2,17 @@
 # Root-owned agent rollout. The Pi setup installs it as /usr/local/sbin/jarvis-deploy-agent
 # (root:root 755), and sudoers lets the `deploy` user run ONLY this and jarvis-install-app,
 # so the deploy SSH key needs no `docker` group (which is root-equivalent). It pulls only
-# ghcr.io/faering/jarvis-agent:<tag> and runs only the root-owned compose file below.
+# ghcr.io/faering/jarvis-agent:<tag>@<digest> and runs only the root-owned compose file below.
+# Provenance (#121): the digest must carry a Sigstore attestation from this repo's
+# release-artifacts workflow. The deploy stages the evidence in the deploy user's
+# ~/jarvis/incoming/: agent-<hex>.manifest.json (the image's raw manifest, whose sha256 IS
+# the digest) and agent-<hex>.sigstore.json (the bundle). Both are checked offline here.
 #
-# Usage:  sudo -n /usr/local/sbin/jarvis-deploy-agent deploy <docker-tag> <expected-version> <protocol>
+# Usage:  sudo -n /usr/local/sbin/jarvis-deploy-agent deploy <docker-tag> <expected-version> <protocol> <digest>
 #         sudo -n /usr/local/sbin/jarvis-deploy-agent state     # KEY=VALUE, empty if never deployed
 # Files:  /opt/jarvis/docker-compose.yml  root-owned compose file (from deploy/pi/)
 #         /opt/jarvis/agent.env           root-owned runtime config (JARVIS_*, API keys)
-#         /var/lib/jarvis/agent.env       deploy state; compose --env-file, pins AGENT_IMAGE_TAG
+#         /var/lib/jarvis/agent.env       deploy state; compose --env-file, pins the tag + digest
 #         /var/log/jarvis/jarvis-deploy-<UTC date>.log  log (docs/logging.md), also on stderr
 # On failure it rolls back to the previous tag; a failed first deploy removes the agent.
 set -euo pipefail
@@ -16,7 +20,8 @@ set -euo pipefail
 # Test hooks only; never honoured as root (sudo also resets the environment).
 if [[ $EUID -eq 0 ]]; then
   unset JARVIS_OPT_DIR JARVIS_STATE_DIR AGENT_HEALTH_TIMEOUT JARVIS_LOG_LIB JARVIS_LOG_DIR \
-    JARVIS_LOG_COMPONENT JARVIS_LOG_TURN
+    JARVIS_LOG_COMPONENT JARVIS_LOG_TURN JARVIS_VERIFY_LIB JARVIS_GH JARVIS_TRUSTED_ROOT \
+    JARVIS_INSTALL_HOME
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 fi
 opt="${JARVIS_OPT_DIR:-/opt/jarvis}"
@@ -30,6 +35,7 @@ next="$state_dir/agent.env.next"
 tag_re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+-g[0-9a-f]{4,40}(-dirty)?)?$'
 version_re='^[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+\.g[0-9a-f]{4,40}(\.dirty)?)?$'
 protocol_re='^([0-9]+|none)$'
+digest_re='^sha256:[0-9a-f]{64}$'
 
 # Shared logger (scripts/lib/log.sh): sourced only if root owns it and its folder and nobody
 # else can write them; otherwise a stderr-only fallback. Logging never fails a deploy.
@@ -52,13 +58,22 @@ else
   }
   log WARN deploy.agent "shared logger missing or untrusted; logging to stderr only" path="$log_lib"
 fi
+# The provenance verifier (scripts/lib/verify.sh), same trust rule; a deploy fails closed
+# without it (`state` works regardless).
+verify_lib="${JARVIS_VERIFY_LIB:-/usr/local/lib/jarvis/verify.sh}"
+verifier=0
+if lib_ok "$verify_lib"; then
+  # shellcheck source=../lib/verify.sh
+  . "$verify_lib"
+  verifier=1
+fi
 info() { log INFO deploy.agent "$@"; }
 die() {
   log ERROR deploy.agent "$@"
   exit 1
 }
 usage() {
-  echo "usage: $(basename "$0") deploy <docker-tag> <expected-version> <protocol> | state" >&2
+  echo "usage: $(basename "$0") deploy <docker-tag> <expected-version> <protocol> <digest> | state" >&2
   exit 2
 }
 state_get() { [[ -f "$1" ]] && sed -n "s/^$2=//p" "$1" | tail -n1 || true; }
@@ -138,16 +153,63 @@ pull_models() { # pull_models <env-file>
   info "models ready"
 }
 
+# Copy a file from the deploy user's ~/jarvis/incoming/ into a root-owned private one:
+# every path component opened with O_NOFOLLOW relative to its parent, regular files only.
+fetch_incoming() { # fetch_incoming <name> <dest>
+  local user home
+  user="${SUDO_USER:-$(id -un)}"
+  home="${JARVIS_INSTALL_HOME:-$(getent passwd "$user" | cut -d: -f6)}"
+  python3 - "$home" "$1" "$2" <<'PY'
+import os, shutil, stat, sys
+home, name, dest = sys.argv[1:]
+nofollow = os.O_RDONLY | os.O_NOFOLLOW
+fd = os.open(home, nofollow | os.O_DIRECTORY)
+for part in ("jarvis", "incoming"):
+    fd = os.open(part, nofollow | os.O_DIRECTORY, dir_fd=fd)
+src = os.open(name, nofollow, dir_fd=fd)
+if not stat.S_ISREG(os.fstat(src).st_mode):
+    sys.exit(f"refusing {name}: not a regular file")
+with os.fdopen(src, "rb") as fsrc, open(dest, "xb") as fdst:
+    shutil.copyfileobj(fsrc, fdst)
+PY
+}
+
+# The digest was built by our release workflow: its raw manifest hashes to it, and that
+# manifest carries our attestation. Docker then pulls by the same digest, so it gets exactly
+# these bytes.
+verify_image() { # verify_image <digest>
+  local digest="$1" hex="${1#sha256:}" work
+  ((verifier)) || die "the provenance verifier is missing or untrusted (re-run the Pi setup)" \
+    path="$verify_lib"
+  work="$(mktemp -d)"
+  if ! fetch_incoming "agent-$hex.manifest.json" "$work/manifest.json" 2>/dev/null ||
+    ! fetch_incoming "agent-$hex.sigstore.json" "$work/bundle.json" 2>/dev/null; then
+    rm -rf "$work"
+    die "no provenance evidence staged for $digest (agent-$hex.{manifest,sigstore}.json)"
+  fi
+  if [[ "$(sha256sum "$work/manifest.json" | cut -d' ' -f1)" != "$hex" ]]; then
+    rm -rf "$work"
+    die "the staged manifest is not image $digest"
+  fi
+  if ! verify_artifact "$work/manifest.json" "$work/bundle.json"; then
+    rm -rf "$work"
+    die "provenance does not verify for $digest (not built by faering/jarvis release-artifacts)"
+  fi
+  rm -rf "$work"
+  info "provenance verified" digest="$digest"
+}
+
 cmd_state() {
   [[ -f "$state" ]] || exit 0
   grep -E '^[A-Z_]+=' "$state" || true
 }
 
-cmd_deploy() { # cmd_deploy <docker-tag> <expected-version> <protocol>
-  local tag="$1" expected="$2" protocol="$3" prev_tag prev_version
+cmd_deploy() { # cmd_deploy <docker-tag> <expected-version> <protocol> <digest>
+  local tag="$1" expected="$2" protocol="$3" digest="$4" prev_tag prev_version
   [[ "$tag" =~ $tag_re ]] || die "refusing tag '$tag': not a DOCKER_TAG (scripts/version.sh)"
   [[ "$expected" =~ $version_re ]] || die "refusing version '$expected': not a canonical version"
   [[ "$protocol" =~ $protocol_re ]] || die "refusing protocol '$protocol': not an integer or 'none'"
+  [[ "$digest" =~ $digest_re ]] || die "refusing digest '$digest': not sha256:<64 hex>"
   # The tag is the version's Docker form (1.2.3+4.gabc.dirty -> 1.2.3-4-gabc-dirty).
   local want_tag="${expected/+/-}"
   want_tag="${want_tag/.g/-g}"
@@ -161,6 +223,7 @@ cmd_deploy() { # cmd_deploy <docker-tag> <expected-version> <protocol>
   trusted "$state_dir"
   exec 9>"$state_dir/deploy.lock"
   flock -n 9 || die "another agent deploy is running"
+  verify_image "$digest" # before touching anything: no evidence, no deploy
 
   docker network inspect jarvis-net >/dev/null 2>&1 || docker network create jarvis-net >/dev/null
 
@@ -174,6 +237,7 @@ cmd_deploy() { # cmd_deploy <docker-tag> <expected-version> <protocol>
     umask 022
     cat >"$next" <<EOF
 AGENT_IMAGE_TAG=$tag
+AGENT_IMAGE_DIGEST=$digest
 VERSION=$expected
 PROTOCOL=$protocol
 PREVIOUS_IMAGE_TAG=$prev_tag
@@ -182,7 +246,7 @@ DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
   )
 
-  info "deploy started" image="ghcr.io/faering/jarvis-agent:$tag" version="$expected" \
+  info "deploy started" image="ghcr.io/faering/jarvis-agent:$tag@$digest" version="$expected" \
     protocol="$protocol" previous="${prev_tag:-none}"
   if ! compose "$next" pull agent || ! pull_models "$next"; then
     log ERROR deploy.agent "image or models not ready; the running agent is untouched" \
@@ -217,8 +281,8 @@ EOF
 
 case "${1:-}" in
   deploy)
-    [[ $# -eq 4 ]] || usage
-    cmd_deploy "$2" "$3" "$4"
+    [[ $# -eq 5 ]] || usage
+    cmd_deploy "$2" "$3" "$4" "$5"
     ;;
   state)
     [[ $# -eq 1 ]] || usage

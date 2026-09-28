@@ -47,6 +47,11 @@ state_get() { [[ -f "$1" ]] && sed -n "s/^$2=//p" "$1" | tail -n1 || true; }
 installed() { dpkg-query -W -f='${Status} ${Version}' "$1" 2>/dev/null | sed -n 's/^install ok installed //p'; }
 install() { sudo -n /usr/local/sbin/jarvis-install-app "$1"; }
 keep() { cp -f "$1" "$2.tmp" && mv -f "$2.tmp" "$2"; } # keep <src> <dest>, atomically
+# A .deb and its provenance bundle travel together (#121): the installer verifies both.
+keep_deb() { # keep_deb <src.deb> <dest.deb>
+  keep "$1" "$2"
+  if [[ -f "$1.sigstore.json" ]]; then keep "$1.sigstore.json" "$2.sigstore.json"; else rm -f "$2.sigstore.json"; fi
+}
 
 mkdir -p "$dir/state" "$dir/app"
 deb="$(realpath "$1")" # apt-get wants a path, not a bare file name
@@ -59,7 +64,7 @@ for kept in "$current" "$previous" "${prev_deb:-/nonexistent}"; do
     exit 1
   fi
 done
-trap 'rm -f "$deb"' EXIT
+trap 'rm -f "$deb" "$deb.sigstore.json"' EXIT
 
 pkg="$(dpkg-deb -f "$deb" Package)"
 deb_version="$(dpkg-deb -f "$deb" Version)"
@@ -75,10 +80,10 @@ if install "$deb" && [[ "$(installed "$pkg")" == "$expected" ]]; then
   # Promote only now: the old current becomes previous, the candidate becomes current.
   prev_kept=""
   if [[ -n "$prev_deb" && -f "$prev_deb" ]]; then
-    keep "$prev_deb" "$previous"
+    keep_deb "$prev_deb" "$previous"
     prev_kept="$previous"
   fi
-  keep "$deb" "$current"
+  keep_deb "$deb" "$current"
   # Write the new state beside the old one and rename it into place (atomic): a lost SSH
   # session or power cut mid-write must never leave an empty state file.
   cat >"$state.next" <<EOF
@@ -92,8 +97,10 @@ DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
   mv -f "$state.next" "$state"
   # Prune anything else (e.g. debs kept under their release names by older deploys).
-  find "$dir/app" -maxdepth 1 -name '*.deb' ! -path "$current" ! -path "$previous" -delete
-  [[ -n "$prev_kept" ]] || rm -f "$previous"
+  find "$dir/app" -maxdepth 1 \( -name '*.deb' -o -name '*.deb.sigstore.json' \) \
+    ! -path "$current" ! -path "$previous" \
+    ! -path "$current.sigstore.json" ! -path "$previous.sigstore.json" -delete
+  [[ -n "$prev_kept" ]] || rm -f "$previous" "$previous.sigstore.json"
   log INFO deploy.app "deployed; takes effect on the next app start" version="$expected"
   exit 0
 fi
