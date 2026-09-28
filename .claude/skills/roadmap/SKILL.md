@@ -23,9 +23,10 @@ one-time UI settings (view menu → Date fields, and → Markers → Milestones)
 set them.
 
 **One milestone = one Jarvis release** (#162): `Jarvis N: <outcome>` ("Jarvis 1: Lives on
-the Pi"), an outcome you could demo. The description holds the outcome, the codename once
-the user names it (a Marvel/DC superhero), and the component versions at release. Jarvis
-releases pin a tested set of independently released components (ADR 0004).
+the Pi"), an outcome you could demo. The description holds the outcome and, once the user
+names it, `Codename: <Marvel/DC superhero>.` (read by `jarvis-release`). Jarvis releases
+(tag `jarvis-vN.M`) pin a tested set of independently released components (ADR 0004) in
+`releases/jarvis-N.toml`.
 The plan is **derived from the issues**, never hand-written: features/stories → Added,
 bugs → Fixed, `change:changed` / `change:deprecated` labels → Changed / Deprecated.
 
@@ -60,8 +61,16 @@ bugs → Fixed, `change:changed` / `change:deprecated` labels → Changed / Depr
   then per epic, children with start → target, status, overdue/overrun flag.
 - **`milestones`** — list open milestones: due date, progress, overruns, items missing one.
 - **`milestone add <title> <due> <outcome>`** — propose, then create on OK.
-- **`plan-release <milestone>`** — the derived Added/Changed/Fixed/Deprecated list for a
-  milestone (open and closed issues), for review or release notes.
+- **`plan-release <milestone>`** — the derived Added/Changed/Deprecated/Fixed list for a
+  milestone, for review or to cut the release. Before the milestone is done, list its open
+  and closed issues by those rules (open ones marked). To cut it, follow
+  [docs/deploy.md "Cut a Jarvis release"](../../../docs/deploy.md#cut-a-jarvis-release):
+  `scripts/release/jarvis-release draft --milestone "<title>" --codename "<name>"` writes
+  `releases/jarvis-N.toml` + `.md` (closed issues only) and the README roadmap block; ask the
+  user for the codename if the milestone has none, and never merge the release PR.
+- **README roadmap** — `sync` also runs `scripts/release/jarvis-release readme --check`; if
+  the milestones changed (title, due date, codename, closed), regenerate the block with
+  `scripts/release/jarvis-release readme` in a PR.
 
 ## How
 Read items with dates (GraphQL, `GITHUB_PAT`):

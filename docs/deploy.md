@@ -76,3 +76,28 @@ flowchart LR
 - Deploys log to `/var/log/jarvis/jarvis-deploy-<date>.log` (`jarvis-logs --component
   deploy`) and stderr. The app's rollback decisions show only in the job output: `deploy` is
   not in `jarvis-log`, so it can't write or delete logs.
+
+## Cut a Jarvis release
+A Jarvis release ("Jarvis N — <Codename>", tag `jarvis-vN.M`) pins a tested pair of
+component releases for a milestone (#162). Components keep releasing and deploying on their
+own in between. `jarvis-vN.0` is the first set for milestone N; `N.1`, `N.2`, … are later
+tested sets with the same codename.
+
+1. Close the milestone's issues (or move the leftovers to the next one), merge the component
+   release PRs you want in the set, and wait for their artifacts (`manifest.json` on each
+   release).
+2. Draft on a branch (agent and app default to the newest complete releases):
+   ```sh
+   git switch -c release/jarvis-1 origin/main
+   scripts/release/jarvis-release draft --milestone "Jarvis 1: Lives on the Pi" \
+     --codename "Captain America"        # optional: --agent 0.4.0 --app 0.1.1
+   ```
+   This writes `releases/jarvis-1.toml` (the manifest), `releases/jarvis-1.md` (notes from
+   the milestone's closed issues) and the README roadmap block, and warns about open issues.
+3. Edit the notes if needed; never write "closes/fixes #n" (CI refuses closing keywords).
+   Commit with `cz commit` (`chore(repo): release Jarvis 1 — Captain America`), push, open
+   a PR. Its `jarvis release (pinned set)` check validates the manifest, the compatibility
+   gate and the integration test on exactly the published agent image x the released app.
+4. Merge. `jarvis-release.yml` waits for `ci-ok` on main, tags `jarvis-v1.0`, publishes the
+   release with the notes and manifest, marks it **Latest** and closes the milestone.
+   Component releases published later don't take Latest from it.
