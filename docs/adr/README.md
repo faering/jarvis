@@ -16,6 +16,7 @@ To change one, add a new ADR that supersedes it and update the old one's status.
 | [0009](0009-least-privilege-deploy.md) | Least-privilege deploys: no docker group, root actions via two audited scripts | Accepted |
 | [0010](0010-presence-screen-catalogue.md) | Presence screens: a catalogue with one folder per screen, the face by default | Accepted |
 | [0011](0011-log-format-and-levels.md) | Plain-text logs on the Pi, OpenTelemetry-shaped, one set of levels | Accepted |
+| [0012](0012-model-catalogue.md) | A model catalogue, with the model per role chosen per device | Accepted |
 
 Template:
 
