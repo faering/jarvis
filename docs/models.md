@@ -5,9 +5,12 @@ Every model Jarvis knows is in [`catalogue.toml`](../agent/src/jarvis_agent/mode
 tries models first. Results go in [`experiments/`](experiments/).
 
 ## Playground on the Pi
+Needs agent ≥ 0.4.0 for `ollama:<name>` (check: `curl -s 127.0.0.1:8000/version`).
 ```sh
-# once: a lab Ollama next to the deployment (remove: docker rm -f ollama-lab)
+# a lab Ollama next to the deployment; its models survive in the volume
 docker run -d --name ollama-lab --network jarvis-net -v ollama-lab:/root/.ollama ollama/ollama:0.34.3
+docker start ollama-lab          # after a reboot (it doesn't restart by itself)
+docker rm -f ollama-lab          # when done (models stay in the ollama-lab volume)
 
 # shorthand for this shell
 m() { docker exec -it jarvis-agent-1 python -m jarvis_agent.models "$@"; }
