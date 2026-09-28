@@ -32,12 +32,22 @@ jobs:
     outputs:
       agent: ${{ steps.detect.outputs.agent }}
       app: ${{ steps.detect.outputs.app }}
+      release: ${{ steps.detect.outputs.release }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # diff against the PR base
       - id: detect
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           echo "agent=$([ -f agent/pyproject.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "app=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          # A Jarvis release PR (#162): the manifests it adds or changes.
+          if [[ -n "$BASE" ]]; then
+            release="$(git diff --name-only --diff-filter=AM "$BASE" HEAD -- 'releases/jarvis-*.toml' | xargs)"
+            echo "release=$release" >> "$GITHUB_OUTPUT"
+          fi
 
   lint:
     name: lint (repo hooks)
@@ -168,10 +178,59 @@ jobs:
         run: docker login ghcr.io -u "$ACTOR" --password-stdin <<<"$TOKEN" || true
       - run: scripts/integration-test.sh
 
+  # A Jarvis release PR (#162, docs/deploy.md): the manifest's pinned agent + app must be
+  # complete published releases, pass the compatibility gate, and pass the integration
+  # test as exactly that pair (the published image x the released app's client).
+  jarvis-release:
+    name: jarvis release (pinned set)
+    needs: detect
+    if: needs.detect.outputs.release != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read # the milestone's open issues (warnings)
+      packages: read # pull the pinned agent image from GHCR
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # jarvis-v* tags: next version, codename per number
+      - name: manifest, notes + published components
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFESTS: ${{ needs.detect.outputs.release }}
+        run: |
+          read -ra manifests <<<"$MANIFESTS"
+          if ((${#manifests[@]} != 1)); then
+            echo "::error::One Jarvis release per PR; this one changes: $MANIFESTS"
+            exit 1
+          fi
+          scripts/release/jarvis-release check "${manifests[0]}" --published > release.env
+          cat release.env
+          cat release.env >> "$GITHUB_ENV"
+      - name: compatibility gate (COMPATIBILITY.md)
+        run: >-
+          scripts/deploy/check-compat.sh compatibility.json
+          agent "$AGENT" "$AGENT_PROTOCOL" "$APP" "$APP_PROTOCOL"
+      - uses: pnpm/action-setup@v6 # version from package.json packageManager
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: log in to GHCR
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: docker login ghcr.io -u "$ACTOR" --password-stdin <<<"$TOKEN"
+      - name: integration test (published agent x released app)
+        run: >-
+          IT_RELEASED_PAIR=1 IT_AGENT_REF="agent-v$AGENT" IT_APP_REF="app-v$APP"
+          scripts/integration-test.sh
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [detect, lint, commits, agent, app, integration]
+    needs: [detect, lint, commits, agent, app, integration, jarvis-release]
     runs-on: ubuntu-latest
     steps:
       - name: all required jobs passed (skipped counts as passed)
