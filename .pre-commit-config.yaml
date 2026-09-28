@@ -103,6 +103,14 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: jarvis-release-test
+        name: jarvis-release tests
+        language: system
+        entry: python3 -m unittest discover -s scripts/release
+        files: ^scripts/release/(jarvis-release|test_jarvis_release\.py|fixtures/)
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: check-compat-test
         name: check-compat.sh tests
         language: system
