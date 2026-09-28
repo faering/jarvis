@@ -230,3 +230,44 @@ def test_cpu_temp_reads_millidegrees(tmp_path) -> None:
     sensor.write_text("61234\n")
     assert cpu_temp(str(sensor)) == pytest.approx(61.234)
     assert cpu_temp(str(tmp_path / "missing")) is None
+
+
+def test_pull_assigned_pulls_what_this_device_uses() -> None:
+    requests: list = []
+    env = {
+        **OLLAMA_ENV,
+        "JARVIS_MODEL_LLM": "qwen2.5-1.5b",
+        "JARVIS_MODEL_TTS": "piper-lessac-medium",
+        "JARVIS_RUNTIME_SPEACHES_URL": "http://speaches:8000/v1",
+    }
+    rc, out, _ = run(
+        ["pull", "--assigned"], env=env, transport=ollama(pulled=set(), requests=requests)
+    )
+    assert rc == 0
+    assert [body["model"] for path, body in requests if path == "/api/pull"] == ["qwen2.5:1.5b"]
+    assert "tts: piper-lessac-medium runs on speaches, skipped" in out
+    assert "Ready: qwen2.5:1.5b" in out
+
+
+def test_pull_assigned_follows_an_explicit_model_override() -> None:
+    requests: list = []
+    env = {**OLLAMA_ENV, "JARVIS_MODEL_LLM": "qwen2.5-1.5b", "JARVIS_LLM_MODEL": "gemma3:1b"}
+    run(["pull", "--assigned"], env=env, transport=ollama(pulled=set(), requests=requests))
+    assert [body["model"] for path, body in requests if path == "/api/pull"] == ["gemma3:1b"]
+
+
+def test_pull_assigned_with_nothing_assigned_is_fine() -> None:
+    rc, out, _ = run(["pull", "--assigned"], env={})
+    assert rc == 0 and "No Ollama models assigned" in out
+
+
+def test_pull_needs_a_model_or_assigned() -> None:
+    rc, _, err = run(["pull"])
+    assert rc == 2 and "--assigned" in err
+
+
+def test_the_home_profile_uses_qwen_on_the_ollama_service() -> None:
+    from jarvis_agent.config import load_config
+
+    llm = load_config({"JARVIS_PROFILE": "home"}).backend_settings().llm
+    assert (llm.model, llm.base_url) == ("qwen2.5:1.5b", "http://ollama:11434/v1")

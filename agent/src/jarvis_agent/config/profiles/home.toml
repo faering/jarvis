@@ -1,6 +1,13 @@
 # Home Pi: Hailo NPU + AI Camera expected, Faelab reachable. Everything probes (auto).
-# The models per role go in [models] once chosen on the Pi (#159); notes/todo/calendar
-# move to Faelab once its providers exist (#75).
+# Notes/todo/calendar move to Faelab once its providers exist (#75).
+
+# The Pi's models (docs/models.md). qwen2.5-1.5b on the CPU for Jarvis 1 (#159, chosen on
+# the Pi 2026-09-28); the NPU and speech come with Jarvis 2. The deploy pulls these.
+[models]
+llm = "qwen2.5-1.5b"
+
+[runtimes.ollama]
+base_url = "http://ollama:11434/v1" # the ollama service in deploy/pi/docker-compose.yml
 
 [capabilities]
 # The home setup has a heavy model; if JARVIS_HEAVY_LLM_* is missing, warn loudly.

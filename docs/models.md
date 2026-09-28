@@ -18,6 +18,7 @@ LAB="--base-url http://ollama-lab:11434/v1"
 
 m list                                   # the catalogue, and this device's model per role
 m pull ollama:gemma3:1b $LAB             # download (any Ollama model: ollama:<name>)
+m pull --assigned                        # the models this device uses (the deploy runs this)
 m chat ollama:gemma3:1b $LAB             # talk to it; /reset, /quit
 m bench ollama:gemma3:1b ollama:llama3.2:3b $LAB                                  # compare
 docker exec jarvis-agent-1 python -m jarvis_agent.models bench \
