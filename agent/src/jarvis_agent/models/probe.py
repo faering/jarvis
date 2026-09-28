@@ -44,10 +44,16 @@ async def chat(
     source: str,
     messages: list[ChatMessage],
     on_text: Callable[[str], None] = lambda _: None,
+    *,
+    think: bool = False,
 ) -> Reply:
-    """Send ``messages`` to the model, streaming text to ``on_text``; returns the timings."""
+    """Send ``messages`` to the model, streaming text to ``on_text``; returns the timings.
+
+    ``think=False`` (Ollama) asks thinking-capable models to answer without a thinking
+    phase, as the hot path needs; models that can't think ignore it.
+    """
     if runtime == "ollama":
-        return await _ollama_chat(client, source, messages, on_text)
+        return await _ollama_chat(client, source, messages, on_text, think)
     return await _openai_chat(client, source, messages, on_text)
 
 
@@ -56,8 +62,9 @@ async def _ollama_chat(
     source: str,
     messages: list[ChatMessage],
     on_text: Callable[[str], None],
+    think: bool,
 ) -> Reply:
-    body = {"model": source, "messages": messages, "stream": True}
+    body = {"model": source, "messages": messages, "stream": True, "think": think}
     start = time.perf_counter()
     first: float | None = None
     parts: list[str] = []
@@ -155,6 +162,15 @@ async def pull(client: httpx.AsyncClient, source: str, on_progress: Callable[[st
                     last = status
     except httpx.TransportError as exc:
         raise ProbeError(f"can't reach ollama at {client.base_url}: {exc!r}") from exc
+
+
+def cpu_temp(path: str = "/sys/class/thermal/thermal_zone0/temp") -> float | None:
+    """The CPU temperature in °C (Linux, incl. the Pi), or None where it can't be read."""
+    try:
+        with open(path) as f:
+            return int(f.read().strip()) / 1000
+    except OSError, ValueError:
+        return None
 
 
 async def unload(client: httpx.AsyncClient, source: str) -> None:

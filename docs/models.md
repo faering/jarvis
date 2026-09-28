@@ -1,35 +1,46 @@
-# Models: the catalogue and the playground
+# Models
 
-Which model fills each role (LLM, STT, TTS, vision, …) is config, backed by the model
-catalogue, [`catalogue.toml`](../agent/src/jarvis_agent/models/catalogue.toml)
-([ADR 0012](adr/0012-model-catalogue.md)).
-Try models with the playground before a device uses them; record what you learn in
-[`experiments/`](experiments/).
+Every model Jarvis knows is in [`catalogue.toml`](../agent/src/jarvis_agent/models/catalogue.toml)
+([ADR 0012](adr/0012-model-catalogue.md)). A device picks one per role; the playground
+tries models first. Results go in [`experiments/`](experiments/).
 
-## Pick models for a device
-In the device's profile (or a `JARVIS_CONFIG` file):
+## Playground on the Pi
+```sh
+# once: a lab Ollama next to the deployment (remove: docker rm -f ollama-lab)
+docker run -d --name ollama-lab --network jarvis-net -v ollama-lab:/root/.ollama ollama/ollama:0.34.3
+
+# shorthand for this shell
+m() { docker exec -it jarvis-agent-1 python -m jarvis_agent.models "$@"; }
+LAB="--base-url http://ollama-lab:11434/v1"
+
+m list                                   # the catalogue, and this device's model per role
+m pull ollama:gemma3:1b $LAB             # download (any Ollama model: ollama:<name>)
+m chat ollama:gemma3:1b $LAB             # talk to it; /reset, /quit
+m bench ollama:gemma3:1b ollama:llama3.2:3b $LAB                                  # compare
+docker exec jarvis-agent-1 python -m jarvis_agent.models bench \
+  ollama:gemma3:1b ollama:llama3.2:3b --base-url http://ollama-lab:11434/v1 --markdown > bench.md
+```
+In dev: `cd agent`, `docker compose up -d ollama`, then
+`JARVIS_RUNTIME_OLLAMA_URL=http://ollama:11434/v1 uv run python -m jarvis_agent.models …`.
+
+## Reading `bench`
+| Column | Meaning |
+|---|---|
+| LOAD s | cold model load (bench unloads first; `--warm` skips that) |
+| FIRST TOKEN s | median time to the first word |
+| TOK/S | median generation speed (`~` = approximate, non-Ollama) |
+| IN MEMORY | size loaded |
+| CPU °C | before → after; around 80 °C the Pi throttles |
+
+Thinking models answer without thinking unless `--think`. `--markdown` adds every answer.
+Prompts: [`bench_prompts.toml`](../agent/src/jarvis_agent/models/bench_prompts.toml) (or `--prompts file.toml`).
+
+## Use a model on a device
+Add it to the catalogue, then in the device profile:
 ```toml
 [models]
-llm = "qwen2.5-1.5b"          # a catalogue id
+llm = "qwen2.5-1.5b"
 [runtimes.ollama]
 base_url = "http://ollama:11434/v1"
 ```
-Or with env: `JARVIS_MODEL_LLM=qwen2.5-1.5b`, `JARVIS_RUNTIME_OLLAMA_URL=…`. For a quick
-try without editing anything, `JARVIS_LLM_MODEL=<runtime name>` overrides just the model.
-A new model goes into the catalogue first (roles, runtime, pinned source, facts).
-
-## The playground
-`python -m jarvis_agent.models` (in `agent/`: `uv run python -m jarvis_agent.models`; on the
-Pi: `docker exec -it jarvis-agent-1 python -m jarvis_agent.models`):
-
-| Command | What it does |
-|---|---|
-| `list` | the catalogue, and which model fills each role here (and which layer set it) |
-| `pull <id>` | download a model into Ollama, with progress |
-| `chat <id>` | talk to a model with Jarvis's system prompt; each reply shows time to first token, tokens/s and model load time. `/reset`, `/quit` |
-| `bench <id> [<id>…]` | run the prompt set on each model: cold load time, then median time to first token and tokens/s, and memory used. `--markdown` adds every answer side by side, ready for an experiment note |
-
-`--base-url` points at another server, e.g. an Ollama you started by hand next to the
-deployment. Ollama models report exact token counts; other runtimes count streamed chunks
-(shown as `~`). The prompt set is [`bench_prompts.toml`](../agent/src/jarvis_agent/models/bench_prompts.toml);
-`--prompts <file>` uses your own.
+Or env: `JARVIS_MODEL_LLM=<id>`, `JARVIS_RUNTIME_OLLAMA_URL=<url>`.

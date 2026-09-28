@@ -192,3 +192,41 @@ def test_bench_unloads_the_model_first_unless_warm() -> None:
     requests.clear()
     run(["bench", "qwen2.5-1.5b", "--warm"], transport=ollama(requests=requests))
     assert all(path != "/api/generate" for path, _ in requests)
+
+
+def test_ad_hoc_ollama_models_can_be_tried_before_they_are_catalogued() -> None:
+    requests: list = []
+    rc, out, _ = run(
+        ["chat", "ollama:qwen2.5:1.5b"], transport=ollama(requests=requests), stdin="Hi\n"
+    )
+    assert rc == 0 and "Hello there!" in out
+    assert requests[0][1]["model"] == "qwen2.5:1.5b"
+
+
+def test_other_ad_hoc_prefixes_are_refused_with_a_hint() -> None:
+    rc, _, err = run(["chat", "speaches:whisper"])
+    assert rc == 2 and "ollama:<name>" in err
+
+
+def test_thinking_is_off_unless_asked_for() -> None:
+    requests: list = []
+    run(["chat", "qwen2.5-1.5b"], transport=ollama(requests=requests), stdin="Hi\n")
+    run(["chat", "qwen2.5-1.5b", "--think"], transport=ollama(requests=requests), stdin="Hi\n")
+    thinks = [body["think"] for path, body in requests if path == "/api/chat"]
+    assert thinks == [False, True]
+
+
+def test_bench_notes_the_cpu_temperature(monkeypatch: pytest.MonkeyPatch) -> None:
+    readings = iter([55.0, 71.4])
+    monkeypatch.setattr("jarvis_agent.models.__main__.cpu_temp", lambda: next(readings))
+    rc, out, _ = run(["bench", "qwen2.5-1.5b"])
+    assert rc == 0 and "CPU °C" in out and "55→71" in out
+
+
+def test_cpu_temp_reads_millidegrees(tmp_path) -> None:
+    from jarvis_agent.models.probe import cpu_temp
+
+    sensor = tmp_path / "temp"
+    sensor.write_text("61234\n")
+    assert cpu_temp(str(sensor)) == pytest.approx(61.234)
+    assert cpu_temp(str(tmp_path / "missing")) is None
