@@ -25,7 +25,9 @@ case "$1" in
     shift 2
     case "$1" in
       pull) exit 0 ;;
-      up) cp "$env" "$run" ;;
+      config) echo agent && [[ -n "${STUB_NO_OLLAMA:-}" ]] || echo ollama ;; # --services
+      run) [[ ! -e "$STUB/pullfail" ]] ;; # models pull --assigned
+      up) [[ "${!#}" != agent ]] || cp "$env" "$run" ;; # only the agent is tracked
       ps) [[ -f "$run" ]] && echo cid ;;
       rm) rm -f "$run" ;;
     esac
@@ -131,6 +133,23 @@ echo 2.0.0 >"$STUB/bad"
 ok "agent: failed upgrade exits non-zero" not agent 2.0.0 2.0.0
 ok "agent: failed upgrade rolls back" has "$STUB/running.env" AGENT_IMAGE_TAG 1.0.0
 ok "agent: failed upgrade keeps state" has "$JARVIS_STATE_DIR/agent.env" AGENT_IMAGE_TAG 1.0.0
+
+fresh agent-models
+ok "agent: pulls the assigned models before switching" agent 1.0.0 1.0.0
+ok "agent: starts ollama first" grep -q ' up -d ollama$' "$STUB/docker.log"
+ok "agent: pulls with the new image, not the running agent" \
+  grep -q ' run --rm --no-deps -T agent python -m jarvis_agent.models pull --assigned$' "$STUB/docker.log"
+ok "agent: models are pulled before the agent is replaced" \
+  bash -c "grep -n -e 'pull --assigned' -e 'up -d agent' '$STUB/docker.log' | head -1 | grep -q 'pull --assigned'"
+touch "$STUB/pullfail"
+ok "agent: a failed model pull fails the deploy" not agent 2.0.0 2.0.0
+ok "agent: ... and leaves the old agent running" has "$STUB/running.env" AGENT_IMAGE_TAG 1.0.0
+ok "agent: ... and keeps the old state" has "$JARVIS_STATE_DIR/agent.env" AGENT_IMAGE_TAG 1.0.0
+rm "$STUB/pullfail"
+
+fresh agent-old-compose
+ok "agent: a compose file without ollama still deploys" env STUB_NO_OLLAMA=1 bash -c "$(declare -f agent); agent 1.0.0 1.0.0"
+ok "agent: ... and pulls no models" not grep -q 'pull --assigned' "$STUB/docker.log"
 
 fresh agent-validate
 for t in x/y a:b ../ ../../etc '' '1.0.0 x' 1.0.0:latest ghcr.io/evil/x:1.0.0 1.0.0/../x \

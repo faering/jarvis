@@ -123,6 +123,21 @@ print(json.loads(body)["version"])
   log INFO "$lg" "healthy" version="$want"
 }
 
+# The models this agent is assigned, pulled into the ollama service with the NEW image
+# before it replaces the running agent: a failed download leaves the old agent untouched.
+# A compose file from before #159 has no ollama service: then say so and skip (the agent
+# runs without a profile, as before, until setup is re-run).
+pull_models() { # pull_models <env-file>
+  local env="$1"
+  if ! compose "$env" config --services | grep -qx ollama; then
+    log WARN deploy.agent "no ollama service in the compose file; re-run the Pi setup (git pull && sudo scripts/pi/setup.sh)"
+    return 0
+  fi
+  compose "$env" up -d ollama || return 1
+  compose "$env" run --rm --no-deps -T agent python -m jarvis_agent.models pull --assigned >&2 || return 1
+  info "models ready"
+}
+
 cmd_state() {
   [[ -f "$state" ]] || exit 0
   grep -E '^[A-Z_]+=' "$state" || true
@@ -169,7 +184,13 @@ EOF
 
   info "deploy started" image="ghcr.io/faering/jarvis-agent:$tag" version="$expected" \
     protocol="$protocol" previous="${prev_tag:-none}"
-  if compose "$next" pull agent && compose "$next" up -d agent && verify "$next" "$expected" deploy.agent; then
+  if ! compose "$next" pull agent || ! pull_models "$next"; then
+    log ERROR deploy.agent "image or models not ready; the running agent is untouched" \
+      version="$expected"
+    rm -f "$next"
+    exit 1
+  fi
+  if compose "$next" up -d agent && verify "$next" "$expected" deploy.agent; then
     mv -f "$next" "$state"
     info "deployed" version="$expected" tag="$tag"
     exit 0
