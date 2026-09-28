@@ -142,6 +142,12 @@ jobs:
           }
           docker_tag="$(jq -r .docker_tag release/manifest.json)"
           protocol="$(jq -r .protocol release/manifest.json)"
+          digest="$(jq -r '.digest // empty' release/manifest.json)"
+          # The Pi verifies the image by digest (#121); releases built before that have none.
+          if [[ "$COMPONENT" == agent && ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::release/manifest.json has no image digest: $TAG was built before provenance (#121). Rebuild it: Actions -> release-artifacts -> Run workflow ($TAG)."
+            exit 1
+          fi
           # Both end up in a remote command line: accept only their grammars (the Pi re-checks).
           if [[ ! "$docker_tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+-g[0-9a-f]+(-dirty)?)?$ \
             || ! "$protocol" =~ ^([0-9]+|none)$ ]]; then
@@ -151,6 +157,7 @@ jobs:
           {
             echo "DOCKER_TAG=$docker_tag"
             echo "PROTOCOL=$protocol"
+            echo "DIGEST=$digest"
           } >> "$GITHUB_ENV"
 
       - name: ssh setup
@@ -197,16 +204,31 @@ jobs:
       - name: roll out agent
         if: env.COMPONENT == 'agent'
         run: |
+          # Provenance evidence (#121), checked by the Pi, not trusted from here: the image's raw
+          # manifest (its sha256 is the digest) and the attestation bundle from the release.
+          hex="${DIGEST#sha256:}"
+          docker buildx imagetools inspect --raw "ghcr.io/faering/jarvis-agent@$DIGEST" >image-manifest.json
+          [[ "$(sha256sum image-manifest.json | cut -d' ' -f1)" == "$hex" ]]
+          gh release download "$TAG" --pattern jarvis-agent-image.sigstore.json --dir release
+          scp image-manifest.json "pi:jarvis/incoming/agent-$hex.manifest.json"
+          scp release/jarvis-agent-image.sigstore.json "pi:jarvis/incoming/agent-$hex.sigstore.json"
           # Root-owned script; sudoers allows the deploy user only it and jarvis-install-app.
-          ssh pi sudo -n /usr/local/sbin/jarvis-deploy-agent deploy "$DOCKER_TAG" "$VERSION" "$PROTOCOL"
+          rc=0
+          ssh pi sudo -n /usr/local/sbin/jarvis-deploy-agent deploy "$DOCKER_TAG" "$VERSION" "$PROTOCOL" "$DIGEST" || rc=$?
+          ssh pi rm -f "jarvis/incoming/agent-$hex.manifest.json" "jarvis/incoming/agent-$hex.sigstore.json" || true
+          exit "$rc"
 
       - name: roll out app
         if: env.COMPONENT == 'app'
         run: |
-          gh release download "$TAG" --pattern '*_arm64.deb' --dir release
+          gh release download "$TAG" --pattern '*_arm64.deb' --pattern '*_arm64.deb.sigstore.json' --dir release
           # Stage under incoming/ with a run-unique name: jarvis/app/ holds the rollback .deb.
-          staged="jarvis/incoming/$GITHUB_RUN_ID-$(basename release/*_arm64.deb)"
-          scp release/*_arm64.deb "pi:$staged"
+          # Its provenance bundle travels next to it; the Pi's installer verifies it (#121).
+          deb="$(ls release/*_arm64.deb)"
+          [[ -f "$deb.sigstore.json" ]] || { echo "::error::$TAG has no provenance bundle for $(basename "$deb"): built before #121? Rebuild it with release-artifacts."; exit 1; }
+          staged="jarvis/incoming/$GITHUB_RUN_ID-$(basename "$deb")"
+          scp "$deb" "pi:$staged"
+          scp "$deb.sigstore.json" "pi:$staged.sigstore.json"
           ssh pi bash -s -- "$staged" "$VERSION" "$PROTOCOL" < scripts/deploy/remote-app.sh
 
       - name: summary

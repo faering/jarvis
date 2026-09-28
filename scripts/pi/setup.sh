@@ -20,6 +20,9 @@ set -euo pipefail
 # Pinned apt signing keys (primary key fingerprints); a download that doesn't match aborts.
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
+# GitHub CLI's apt key (cli.github.com docs, key created 2026-04-07); gh verifies release
+# provenance offline (#121).
+GH_KEY_FPR=7F38BBB59D064DBCB3D84D725612B36462313325
 DEPLOY_USER=deploy
 # Log files (docs/logging.md): the agent container joins the group by this fixed number.
 LOG_GROUP=jarvis-log
@@ -218,6 +221,12 @@ EOF
 if ensure_file /etc/apt/sources.list.d/tailscale.list 644 root:root <<EOF; then updated=0; fi
 deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian $codename main
 EOF
+# GitHub CLI (gh), only to verify release provenance offline (#121); same line as its docs.
+ensure_key /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  https://cli.github.com/packages/githubcli-archive-keyring.gpg "$GH_KEY_FPR"
+if ensure_file /etc/apt/sources.list.d/github-cli.list 644 root:root <<EOF; then updated=0; fi
+deb [arch=$arch signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main
+EOF
 
 # ---- 2. logs: journald on disk + Docker's journald driver (before Docker starts) ------------
 section "journald + docker logging"
@@ -260,7 +269,7 @@ fi
 
 # ---- 3. docker + tailscale -----------------------------------------------------------------
 section "docker + tailscale"
-apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin tailscale
+apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin tailscale gh
 ensure_enabled docker.service
 ensure_enabled tailscaled.service
 
@@ -363,6 +372,60 @@ EOF
 ensure_dir /usr/local/lib/jarvis 755 root:root
 ensure_file /usr/local/lib/jarvis/log.sh 644 root:root <"$repo/scripts/lib/log.sh" || :
 ensure_file /usr/local/bin/jarvis-logs 755 root:root <"$repo/scripts/logs/jarvis-logs" || :
+
+# ---- 4c. release provenance (#121) ---------------------------------------------------------
+# The root deploy scripts verify every artifact offline against a Sigstore trusted root that
+# a daily timer refreshes (no GitHub token on the Pi).
+section "release provenance"
+ensure_file /usr/local/lib/jarvis/verify.sh 644 root:root <"$repo/scripts/lib/verify.sh" || :
+ensure_file /usr/local/lib/jarvis/refresh-trusted-root 755 root:root \
+  <"$repo/scripts/lib/refresh-trusted-root" || :
+ensure_dir /var/lib/jarvis/attest 755 root:root
+units=0
+if ensure_file /etc/systemd/system/jarvis-attest-root.service 644 root:root <<EOF; then units=1; fi
+# $MARK (#121)
+[Unit]
+Description=Refresh the Sigstore trusted root for verifying Jarvis releases
+Documentation=https://github.com/faering/jarvis/blob/main/docs/pi-setup.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/jarvis/refresh-trusted-root
+ProtectSystem=strict
+ReadWritePaths=/var/lib/jarvis/attest
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes
+EOF
+if ensure_file /etc/systemd/system/jarvis-attest-root.timer 644 root:root <<EOF; then units=1; fi
+# $MARK (#121)
+[Unit]
+Description=Refresh the Sigstore trusted root daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+((check || !units)) || systemctl daemon-reload
+if [[ "$(unit_state jarvis-attest-root.timer)" != enabled ]]; then
+  act "enable jarvis-attest-root.timer (daily)" systemctl enable --now jarvis-attest-root.timer
+fi
+if [[ ! -s "$(p /var/lib/jarvis/attest/trusted_root.jsonl)" ]]; then
+  if ((check)); then
+    log "DRIFT: /var/lib/jarvis/attest/trusted_root.jsonl (not fetched yet)"
+    drift=$((drift + 1))
+  else
+    act "fetch the Sigstore trusted root" systemctl start jarvis-attest-root.service || :
+    [[ -s "$(p /var/lib/jarvis/attest/trusted_root.jsonl)" ]] ||
+      defer "trusted root: couldn't fetch it (network?); deploys refuse until it exists"
+  fi
+fi
 units=0
 if ensure_file /etc/systemd/system/jarvis-logs-prune.service 644 root:root <<EOF; then units=1; fi
 # $MARK (#126)
