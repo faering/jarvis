@@ -1,7 +1,8 @@
 """The agent runtime: backends, router, speech, state store and the voice loop.
 
-``start_runtime()`` builds everything from ``JARVIS_*`` env vars (see ``backends.config``
-and ``store.config``); ``lifespan`` ties it to the FastAPI app. Audio output defaults to
+``start_runtime()`` builds everything from the layered config (``load_config()``: profile,
+``JARVIS_CONFIG`` file, env), including the ``[models]`` role assignment (#56); ``lifespan``
+ties it to the FastAPI app. Audio output defaults to
 ``NullSink``: the real speaker sink, like the mic source, is Pi hardware.
 
 ``start_logging()`` configures logging from the ``[logging]`` config section; ``lifespan``
@@ -83,7 +84,15 @@ async def start_runtime(
     store_settings: StoreSettings | None = None,
     sink: AudioSink | None = None,
 ) -> Runtime:
-    """Build and start everything; if any step fails, what already started is closed."""
+    """Build and start everything; if any step fails, what already started is closed.
+
+    Settings not passed in come from ``load_config()``; an invalid config raises
+    ``ConfigError`` (listing every problem) before anything starts.
+    """
+    if backend_settings is None or store_settings is None:
+        config = load_config()
+        backend_settings = backend_settings or config.backend_settings()
+        store_settings = store_settings or config.store_settings()
     async with AsyncExitStack() as stack:
         backends = build_backends(backend_settings)
         stack.push_async_callback(backends.aclose)

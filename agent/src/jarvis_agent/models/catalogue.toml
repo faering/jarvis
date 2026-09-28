@@ -1,0 +1,38 @@
+# Every model Jarvis knows (#56, ADR 0012). Facts only: benchmark results differ per device
+# and over time, so they go in dated notes under docs/experiments/.
+#
+# A device picks the model for each role in its profile ([models] llm = "<id>") or with
+# JARVIS_MODEL_<ROLE>=<id>, and says where each runtime is ([runtimes.<name>] base_url, or
+# JARVIS_RUNTIME_<NAME>_URL). `python -m jarvis_agent.models list` shows the result.
+#
+#   roles    llm | heavy_llm | stt | tts | vlm | wake_word | embed | vision
+#            (llm, heavy_llm, stt and tts are wired to backends today; the rest are listed
+#            ahead of the vision and voice work)
+#   runtime  the server that runs it: ollama, speaches, a cloud or Faelab endpoint (all
+#            OpenAI-compatible, ADR 0003), or hailo / imx500 (not wired yet, #60 / #61)
+#   source   the runtime's own name for the model, pinned
+#   voice    TTS only: the voice to ask for
+
+[model."qwen2.5-1.5b"]
+roles = ["llm"]
+runtime = "ollama"
+source = "qwen2.5:1.5b"
+size = "1.5B parameters"
+licence = "Apache-2.0"
+notes = "Dev default. Also in the Hailo-10H model zoo, so dev and the NPU can run the same model."
+
+[model."faster-whisper-base-en"]
+roles = ["stt"]
+runtime = "speaches"
+source = "Systran/faster-whisper-base.en"
+size = "74M parameters, English only"
+licence = "MIT"
+notes = "Dev default speech-to-text."
+
+[model."piper-lessac-medium"]
+roles = ["tts"]
+runtime = "speaches"
+source = "speaches-ai/piper-en_US-lessac-medium"
+voice = "lessac"
+size = "medium quality"
+notes = "Dev default text-to-speech. Check the voice's model card for its licence."

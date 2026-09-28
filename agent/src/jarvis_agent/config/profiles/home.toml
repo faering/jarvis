@@ -1,6 +1,6 @@
 # Home Pi: Hailo NPU + AI Camera expected, Faelab reachable. Everything probes (auto).
-# Backends stay in env (JARVIS_<ROLE>_*); notes/todo/calendar move to Faelab once its
-# providers exist (#75).
+# The models per role go in [models] once chosen on the Pi (#159); notes/todo/calendar
+# move to Faelab once its providers exist (#75).
 
 [capabilities]
 # The home setup has a heavy model; if JARVIS_HEAVY_LLM_* is missing, warn loudly.

@@ -26,19 +26,24 @@ services:
       # State store (JARVIS_STATE_DB, default /data/jarvis.db): survives recreation.
       - jarvis-state:/data
     environment:
-      # Role backends (docs/architecture.md); override any of these in .env.
-      JARVIS_LLM_BACKEND: ${JARVIS_LLM_BACKEND:-openai}
-      JARVIS_LLM_BASE_URL: ${JARVIS_LLM_BASE_URL:-http://ollama:11434/v1}
-      JARVIS_LLM_MODEL: ${JARVIS_LLM_MODEL:-qwen2.5:1.5b}
+      # Models per role, by catalogue id (agent/src/jarvis_agent/models/catalogue.toml), and
+      # where their runtimes are. Override in .env; JARVIS_<ROLE>_* (e.g. JARVIS_LLM_MODEL)
+      # still override single fields for quick experiments.
+      JARVIS_MODEL_LLM: ${JARVIS_MODEL_LLM:-qwen2.5-1.5b}
+      JARVIS_MODEL_STT: ${JARVIS_MODEL_STT:-faster-whisper-base-en}
+      JARVIS_MODEL_TTS: ${JARVIS_MODEL_TTS:-piper-lessac-medium}
+      JARVIS_RUNTIME_OLLAMA_URL: ${JARVIS_RUNTIME_OLLAMA_URL:-http://ollama:11434/v1}
+      JARVIS_RUNTIME_SPEACHES_URL: ${JARVIS_RUNTIME_SPEACHES_URL:-http://speaches:8000/v1}
+      JARVIS_LLM_BACKEND: ${JARVIS_LLM_BACKEND:-}
+      JARVIS_LLM_BASE_URL: ${JARVIS_LLM_BASE_URL:-}
+      JARVIS_LLM_MODEL: ${JARVIS_LLM_MODEL:-}
       JARVIS_LLM_API_KEY: ${JARVIS_LLM_API_KEY:-}
-      JARVIS_STT_BACKEND: ${JARVIS_STT_BACKEND:-openai}
-      JARVIS_STT_BASE_URL: ${JARVIS_STT_BASE_URL:-http://speaches:8000/v1}
-      JARVIS_STT_MODEL: ${JARVIS_STT_MODEL:-Systran/faster-whisper-base.en}
+      JARVIS_STT_BACKEND: ${JARVIS_STT_BACKEND:-}
+      JARVIS_STT_MODEL: ${JARVIS_STT_MODEL:-}
       JARVIS_STT_API_KEY: ${JARVIS_STT_API_KEY:-}
-      JARVIS_TTS_BACKEND: ${JARVIS_TTS_BACKEND:-openai}
-      JARVIS_TTS_BASE_URL: ${JARVIS_TTS_BASE_URL:-http://speaches:8000/v1}
-      JARVIS_TTS_MODEL: ${JARVIS_TTS_MODEL:-speaches-ai/piper-en_US-lessac-medium}
-      JARVIS_TTS_VOICE: ${JARVIS_TTS_VOICE:-lessac}
+      JARVIS_TTS_BACKEND: ${JARVIS_TTS_BACKEND:-}
+      JARVIS_TTS_MODEL: ${JARVIS_TTS_MODEL:-}
+      JARVIS_TTS_VOICE: ${JARVIS_TTS_VOICE:-}
       JARVIS_TTS_API_KEY: ${JARVIS_TTS_API_KEY:-}
 
   # LLM server. qwen2.5:1.5b is also in the Hailo-10H model zoo, so dev and Pi run the same
