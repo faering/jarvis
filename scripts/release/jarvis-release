@@ -1,0 +1,582 @@
+#!/usr/bin/env python3
+"""Named Jarvis releases (#162): a tested set of component releases per milestone.
+
+A release PR adds releases/jarvis-N.toml (the manifest) and releases/jarvis-N.md (the
+notes); CI runs the integration test against exactly the pinned, published versions, and
+.github/workflows/jarvis-release.yml tags jarvis-vN.M and publishes the release on merge.
+
+Usage (docs/deploy.md, "Cut a Jarvis release"):
+  jarvis-release draft --milestone "Jarvis 1: Lives on the Pi" [--codename NAME]
+                       [--agent X.Y.Z] [--app X.Y.Z]
+      write the manifest + notes (agent/app default to the latest published releases)
+      and refresh the README roadmap block
+  jarvis-release notes releases/jarvis-N.toml      re-render the notes to stdout
+  jarvis-release check releases/jarvis-N.toml [--published]
+      validate the manifest + notes offline (git tags); --published also checks the
+      component releases and the milestone on GitHub. Prints KEY=VALUE lines for CI.
+  jarvis-release pending                            manifests whose tag doesn't exist yet
+  jarvis-release readme [--check]                   regenerate the README roadmap block
+
+Env: JARVIS_REPO (default $GITHUB_REPOSITORY, else faering/jarvis). GitHub is read with
+`gh`, so its auth applies. Python stdlib only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+# The repo root; tests point it at a scratch repo.
+ROOT = Path(os.environ.get("JARVIS_ROOT") or Path(__file__).resolve().parent.parent.parent)
+COMPONENTS = {"agent": "agent", "app": "frontend"}  # component -> path (its CHANGELOG.md)
+SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+MILESTONE_TITLE = re.compile(r"^Jarvis (\d+): (.+)$")
+JARVIS_TAG = re.compile(r"^jarvis-v(\d+)\.(\d+)$")
+START = "<!-- roadmap:start -->"
+END = "<!-- roadmap:end -->"
+# A closing keyword followed by an issue reference closes that issue when the text lands on
+# main (commit message) or merges (PR body). Release text must never contain one.
+CLOSING = re.compile(
+    r"(?i)\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(\s*:?\s+)"
+    r"((?:[\w.-]+/[\w.-]+)?#\d+|https?://github\.com/[\w.-]+/[\w.-]+/issues/\d+)"
+)
+SECTIONS = ("Added", "Changed", "Deprecated", "Fixed")
+
+
+class Error(Exception):
+    pass
+
+
+def repo() -> str:
+    return os.environ.get("JARVIS_REPO") or os.environ.get("GITHUB_REPOSITORY") or "faering/jarvis"
+
+
+# --- GitHub + git -----------------------------------------------------------------------
+
+
+def gh(*args: str) -> str:
+    try:
+        out = subprocess.run(["gh", *args], check=True, capture_output=True, text=True)
+    except FileNotFoundError as e:
+        raise Error("gh (GitHub CLI) is not installed") from e
+    except subprocess.CalledProcessError as e:
+        raise Error(f"gh {' '.join(args)} failed: {e.stderr.strip()}") from e
+    return out.stdout
+
+
+def gh_lines(*args: str) -> list[dict]:
+    """`gh api --paginate --jq '.[]'` output: one JSON object per line."""
+    return [json.loads(line) for line in gh(*args).splitlines() if line.strip()]
+
+
+def milestones() -> list[dict]:
+    return gh_lines(
+        "api", "--paginate", f"repos/{repo()}/milestones?state=all&per_page=100", "--jq", ".[]"
+    )
+
+
+def milestone(title: str) -> dict:
+    for m in milestones():
+        if m["title"] == title:
+            return m
+    raise Error(f"no milestone titled {title!r} in {repo()}")
+
+
+def milestone_issues(number: int) -> list[dict]:
+    items = gh_lines(
+        "api",
+        "--paginate",
+        f"repos/{repo()}/issues?milestone={number}&state=all&per_page=100",
+        "--jq",
+        ".[]",
+    )
+    return [i for i in items if "pull_request" not in i]
+
+
+def releases() -> list[dict]:
+    return gh_lines(
+        "api",
+        "--paginate",
+        f"repos/{repo()}/releases?per_page=100",
+        "--jq",
+        ".[] | {tag_name, draft, prerelease, assets: [.assets[].name]}",
+    )
+
+
+def published(rels: list[dict], component: str) -> list[str]:
+    """Versions of a component with a complete release (manifest.json is uploaded last)."""
+    out = []
+    for r in rels:
+        m = re.fullmatch(rf"{component}-v(\d+\.\d+\.\d+)", r["tag_name"])
+        if m and not r["draft"] and not r["prerelease"] and "manifest.json" in r["assets"]:
+            out.append(m.group(1))
+    return sorted(out, key=semver_key)
+
+
+def component_manifest(component: str, version: str) -> dict:
+    tag = f"{component}-v{version}"
+    return json.loads(
+        gh("release", "download", tag, "-R", repo(), "--pattern", "manifest.json", "--output", "-")
+    )
+
+
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(ROOT), *args], check=True, capture_output=True, text=True
+    ).stdout
+
+
+def jarvis_tags() -> list[str]:
+    return [t for t in git("tag", "--list", "jarvis-v*").split() if JARVIS_TAG.match(t)]
+
+
+def semver_key(v: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in v.split("."))
+
+
+# --- manifest ---------------------------------------------------------------------------
+
+
+@dataclass
+class Manifest:
+    number: int
+    version: str  # "N.M" -> tag jarvis-vN.M
+    codename: str
+    milestone: str
+    agent: str
+    app: str
+
+    @property
+    def tag(self) -> str:
+        return f"jarvis-v{self.version}"
+
+    @property
+    def minor(self) -> int:
+        return int(self.version.split(".")[1])
+
+    @property
+    def title(self) -> str:
+        n = str(self.number) if self.minor == 0 else self.version
+        return f"Jarvis {n} — {self.codename}"
+
+    def dumps(self) -> str:
+        s = lambda v: json.dumps(v, ensure_ascii=False)  # noqa: E731 (TOML basic string)
+        return (
+            "# Jarvis release manifest (#162): the tested set this release pins.\n"
+            "# Drafted by scripts/release/jarvis-release; CI on the release PR runs the\n"
+            "# integration test against exactly these published versions. Models are pinned\n"
+            "# through the agent's model catalogue (ADR 0012).\n"
+            f"number = {self.number}\n"
+            f"version = {s(self.version)}  # tag jarvis-v{self.version}\n"
+            f"codename = {s(self.codename)}\n"
+            f"milestone = {s(self.milestone)}\n"
+            "\n[components]\n"
+            f"agent = {s(self.agent)}\n"
+            f"app = {s(self.app)}\n"
+        )
+
+
+def parse_manifest(text: str, name: str = "manifest") -> Manifest:
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise Error(f"{name}: invalid TOML: {e}") from e
+    problems = []
+    comps = data.get("components")
+    if not isinstance(comps, dict):
+        problems.append("missing [components]")
+        comps = {}
+    number = data.get("number")
+    if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+        problems.append("number must be a positive integer")
+    version = data.get("version")
+    if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+", version):
+        problems.append('version must be "N.M"')
+    elif isinstance(number, int) and int(version.split(".")[0]) != number:
+        problems.append(f"version {version} does not start with number {number}")
+    for key in ("codename", "milestone"):
+        if not isinstance(data.get(key), str) or not data[key].strip():
+            problems.append(f"{key} must be a non-empty string")
+    if isinstance(data.get("milestone"), str):
+        m = MILESTONE_TITLE.match(data["milestone"])
+        if not m or (isinstance(number, int) and int(m.group(1)) != number):
+            problems.append(f'milestone must be "Jarvis {number}: <outcome>"')
+    for c in COMPONENTS:
+        if not isinstance(comps.get(c), str) or not SEMVER.match(comps[c]):
+            problems.append(f"components.{c} must be a released version X.Y.Z")
+    unknown = set(comps) - set(COMPONENTS)
+    if unknown:
+        problems.append(f"unknown components: {', '.join(sorted(unknown))}")
+    if problems:
+        raise Error(f"{name}: " + "; ".join(problems))
+    return Manifest(
+        number, version, data["codename"], data["milestone"], comps["agent"], comps["app"]
+    )
+
+
+def load_manifest(path: Path) -> Manifest:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise Error(f"cannot read {path}: {e}") from e
+    m = parse_manifest(text, str(path))
+    if path.name != f"jarvis-{m.number}.toml":
+        raise Error(f"{path}: must be named jarvis-{m.number}.toml")
+    return m
+
+
+def manifest_at(tag: str, number: int) -> Manifest | None:
+    """The manifest as it was released at <tag> (for codename and previous components)."""
+    try:
+        text = git("show", f"{tag}:releases/jarvis-{number}.toml")
+    except subprocess.CalledProcessError:
+        return None
+    return parse_manifest(text, f"{tag}:releases/jarvis-{number}.toml")
+
+
+def released_minors(number: int, tags: list[str]) -> list[int]:
+    out = []
+    for t in tags:
+        m = JARVIS_TAG.match(t)
+        if m and int(m.group(1)) == number:
+            out.append(int(m.group(2)))
+    return sorted(out)
+
+
+def next_version(number: int, tags: list[str]) -> str:
+    minors = released_minors(number, tags)
+    return f"{number}.{minors[-1] + 1 if minors else 0}"
+
+
+# --- notes ------------------------------------------------------------------------------
+
+
+def defuse(text: str) -> str:
+    """'Fixes #12' -> 'Fixes issue #12': still readable, no longer a closing keyword."""
+    return CLOSING.sub(lambda m: f"{m.group(1)}{m.group(2)}issue {m.group(3)}", text)
+
+
+def closing_keywords(text: str) -> list[str]:
+    return [m.group(0) for m in CLOSING.finditer(text)]
+
+
+def section(issue: dict) -> str | None:
+    labels = {lbl["name"] for lbl in issue.get("labels", [])}
+    if "change:deprecated" in labels:
+        return "Deprecated"
+    if "change:changed" in labels:
+        return "Changed"
+    if "type:bug" in labels:
+        return "Fixed"
+    if labels & {"type:feature", "type:story"}:
+        return "Added"
+    return None  # epics and tasks aren't user-facing changes
+
+
+def outcome(description: str | None) -> str:
+    """The milestone description without its Codename:/Components: bookkeeping."""
+    text = re.split(r"\s*\b(?:Codename|Components):", description or "")[0]
+    return text.strip()
+
+
+def milestone_codename(description: str | None) -> str | None:
+    m = re.search(r"\bCodename:\s*([^.\n]+)", description or "")
+    name = m.group(1).strip() if m else ""
+    return None if not name or name.lower().startswith("to be") else name
+
+
+def render_notes(
+    man: Manifest, ms: dict, issues: list[dict], previous: Manifest | None = None
+) -> str:
+    r = repo()
+    lines = [f"**{man.title}** · {MILESTONE_TITLE.match(man.milestone).group(2)}", ""]
+    if outcome(ms.get("description")):
+        lines += [defuse(outcome(ms.get("description"))), ""]
+    lines += ["| Component | Version | Changelog |", "|---|---|---|"]
+    for comp, path in COMPONENTS.items():
+        v = getattr(man, comp)
+        tag = f"{comp}-v{v}"
+        was = getattr(previous, comp) if previous else None
+        shown = f"{v} (was {was})" if was and was != v else v
+        lines.append(
+            f"| {comp} | [{shown}](https://github.com/{r}/releases/tag/{tag}) "
+            f"| [CHANGELOG](https://github.com/{r}/blob/{tag}/{path}/CHANGELOG.md) |"
+        )
+    grouped: dict[str, list[str]] = {s: [] for s in SECTIONS}
+    for i in sorted(issues, key=lambda i: i["number"]):
+        sec = section(i)
+        if i["state"] != "closed" or i.get("state_reason") == "not_planned" or not sec:
+            continue
+        grouped[sec].append(f"- {defuse(i['title'])} ([#{i['number']}]({i['html_url']}))")
+    for sec in SECTIONS:
+        if grouped[sec]:
+            lines += ["", f"## {sec}", *grouped[sec]]
+    lines += [
+        "",
+        f"Milestone: [{man.milestone}]({ms.get('html_url', '')}). "
+        "Manifest attached; component fixes keep shipping between Jarvis releases.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def open_issues(issues: list[dict]) -> list[dict]:
+    return [i for i in issues if i["state"] == "open"]
+
+
+# --- README roadmap block -----------------------------------------------------------------
+
+
+def roadmap_block(mss: list[dict], manifests: list[Manifest]) -> str:
+    by_number = {m.number: m for m in manifests}
+    rows = []
+    for ms in mss:
+        m = MILESTONE_TITLE.match(ms["title"])
+        if not m:
+            continue
+        n, goal = int(m.group(1)), m.group(2)
+        man = by_number.get(n)
+        codename = man.codename if man else milestone_codename(ms.get("description"))
+        name = f"Jarvis {n}" + (f" · {codename}" if codename else "")
+        if man:
+            status = f"released as jarvis-v{man.version}"
+        elif ms["state"] == "closed":
+            status = "done"
+        elif ms.get("due_on"):
+            status = f"due {ms['due_on'][:10]}"
+        else:
+            status = "planned"
+        rows.append((n, f"  {name} : {goal.replace(':', ' -')} : {status}"))
+    r = repo()
+    return "\n".join(
+        [
+            START,
+            "<!-- Generated by scripts/release/jarvis-release readme from the milestones and",
+            "     releases/*.toml: edit those, not this block. -->",
+            "```mermaid",
+            "timeline",
+            "  title Jarvis releases",
+            *[row for _, row in sorted(rows)],
+            "```",
+            "",
+            f"[Milestones](https://github.com/{r}/milestones?state=all) · "
+            f"[Jarvis releases](https://github.com/{r}/releases?q=jarvis-v&expanded=true)",
+            END,
+        ]
+    )
+
+
+def replace_block(readme: str, block: str) -> str:
+    start, end = readme.find(START), readme.find(END)
+    if start < 0 or end < start:
+        raise Error(f"README has no {START} … {END} block")
+    return readme[:start] + block + readme[end + len(END) :]
+
+
+def repo_manifests() -> list[Manifest]:
+    return [load_manifest(p) for p in sorted((ROOT / "releases").glob("jarvis-*.toml"))]
+
+
+def update_readme(check: bool = False) -> bool:
+    """Rewrite the block; with check, only report drift. True if it was up to date."""
+    path = ROOT / "README.md"
+    old = path.read_text(encoding="utf-8")
+    new = replace_block(old, roadmap_block(milestones(), repo_manifests()))
+    if new != old and not check:
+        path.write_text(new, encoding="utf-8")
+    return new == old
+
+
+# --- commands ---------------------------------------------------------------------------
+
+
+def cmd_draft(a: argparse.Namespace) -> int:
+    m = MILESTONE_TITLE.match(a.milestone)
+    if not m:
+        raise Error('milestone must be titled "Jarvis N: <outcome>"')
+    number = int(m.group(1))
+    ms = milestone(a.milestone)
+    path = ROOT / "releases" / f"jarvis-{number}.toml"
+    existing = load_manifest(path) if path.exists() else None
+    rels = releases()
+    tags = sorted(
+        set(jarvis_tags()) | {r["tag_name"] for r in rels if JARVIS_TAG.match(r["tag_name"])}
+    )
+    version = next_version(number, tags)
+    minors = released_minors(number, tags)
+    previous = manifest_at(f"jarvis-v{number}.{minors[-1]}", number) if minors else None
+    codename = (
+        a.codename
+        or (previous.codename if previous else None)
+        or (existing.codename if existing else None)
+        or milestone_codename(ms.get("description"))
+    )
+    if not codename:
+        raise Error("no codename: pass --codename (or add 'Codename: X.' to the milestone)")
+    if previous and codename != previous.codename:
+        raise Error(f"Jarvis {number} is already {previous.codename!r}: one codename per number")
+    pins = {}
+    for comp in COMPONENTS:
+        pins[comp] = getattr(a, comp) or (published(rels, comp) or [None])[-1]
+        if not pins[comp]:
+            raise Error(f"no published {comp} release; pass --{comp} X.Y.Z")
+        if pins[comp] not in published(rels, comp):
+            raise Error(f"{comp}-v{pins[comp]} is not a complete published release")
+    man = Manifest(number, version, codename, a.milestone, pins["agent"], pins["app"])
+    issues = milestone_issues(ms["number"])
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(man.dumps(), encoding="utf-8")
+    notes = path.with_suffix(".md")
+    notes.write_text(render_notes(man, ms, issues, previous), encoding="utf-8")
+    update_readme()
+    print(f"wrote {path.relative_to(ROOT)}, {notes.relative_to(ROOT)} and README.md")
+    print(f"{man.tag}: {man.title} (agent {man.agent}, app {man.app})")
+    for i in open_issues(issues):
+        print(f"warning: #{i['number']} is still open in {a.milestone}: {i['title']}")
+    return 0
+
+
+def cmd_notes(a: argparse.Namespace) -> int:
+    man = load_manifest(Path(a.manifest))
+    ms = milestone(man.milestone)
+    previous = (
+        manifest_at(f"jarvis-v{man.number}.{man.minor - 1}", man.number) if man.minor else None
+    )
+    sys.stdout.write(render_notes(man, ms, milestone_issues(ms["number"]), previous))
+    return 0
+
+
+def check_manifest(
+    man: Manifest, notes: str | None, tags: list[str], others: list[Manifest]
+) -> list[str]:
+    """Offline checks of a manifest that is about to be released; returns the problems."""
+    problems = []
+    if man.tag in tags:
+        problems.append(
+            f"{man.tag} already exists: bump version to {next_version(man.number, tags)}"
+        )
+    elif man.version != next_version(man.number, tags):
+        problems.append(
+            f"version {man.version} skips ahead: the next is {next_version(man.number, tags)}"
+        )
+    for o in others:
+        if o.number != man.number and o.codename.casefold() == man.codename.casefold():
+            problems.append(f"codename {man.codename!r} is already Jarvis {o.number}'s")
+    if notes is None:
+        problems.append(f"missing notes file releases/jarvis-{man.number}.md")
+    else:
+        found = closing_keywords(notes)
+        if found:
+            problems.append(
+                "notes contain closing keywords (they would close issues): " + ", ".join(found)
+            )
+    return problems
+
+
+def cmd_check(a: argparse.Namespace) -> int:
+    path = Path(a.manifest)
+    man = load_manifest(path)
+    notes_path = path.with_suffix(".md")
+    notes = notes_path.read_text(encoding="utf-8") if notes_path.exists() else None
+    tags = jarvis_tags()
+    others = [load_manifest(p) for p in path.parent.glob("jarvis-*.toml") if p.name != path.name]
+    problems = check_manifest(man, notes, tags, others)
+    minors = released_minors(man.number, tags)
+    if minors:
+        prev = manifest_at(f"jarvis-v{man.number}.{minors[-1]}", man.number)
+        if prev and prev.codename != man.codename:
+            problems.append(
+                f"Jarvis {man.number} is already {prev.codename!r}: one codename per number"
+            )
+    env = {
+        "TAG": man.tag,
+        "TITLE": man.title,
+        "NUMBER": str(man.number),
+        "MILESTONE": man.milestone,
+        "AGENT": man.agent,
+        "APP": man.app,
+        "NOTES": str(notes_path),
+    }
+    if a.published:
+        rels = releases()
+        for comp in COMPONENTS:
+            v = getattr(man, comp)
+            if v not in published(rels, comp):
+                problems.append(f"{comp}-v{v} is not a complete published release (manifest.json)")
+                continue
+            info = component_manifest(comp, v)
+            if info.get("component") != comp or info.get("version") != v:
+                problems.append(f"{comp}-v{v}: its manifest.json describes something else")
+            env[f"{comp.upper()}_PROTOCOL"] = str(info.get("protocol", "none"))
+        try:
+            ms = milestone(man.milestone)
+            for i in open_issues(milestone_issues(ms["number"])):
+                print(
+                    f"::warning::#{i['number']} is still open in {man.milestone}", file=sys.stderr
+                )
+        except Error as e:
+            problems.append(str(e))
+    if problems:
+        for p in problems:
+            print(f"::error file={path}::{p}", file=sys.stderr)
+        return 1
+    for k, v in env.items():
+        print(f"{k}={v}")
+    return 0
+
+
+def cmd_pending(a: argparse.Namespace) -> int:
+    tags = set(jarvis_tags())
+    for p in sorted((ROOT / "releases").glob("jarvis-*.toml")):
+        if load_manifest(p).tag not in tags:
+            print(p.relative_to(ROOT))
+    return 0
+
+
+def cmd_readme(a: argparse.Namespace) -> int:
+    fresh = update_readme(check=a.check)
+    if a.check and not fresh:
+        print(
+            "README roadmap block is stale: run scripts/release/jarvis-release readme",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog="jarvis-release", description=__doc__.split("\n")[0])
+    sub = p.add_subparsers(dest="cmd", required=True)
+    d = sub.add_parser("draft", help="write releases/jarvis-N.toml + .md for a milestone")
+    d.add_argument("--milestone", required=True)
+    d.add_argument("--codename")
+    d.add_argument("--agent", help="agent version (default: latest published)")
+    d.add_argument("--app", help="app version (default: latest published)")
+    d.set_defaults(fn=cmd_draft)
+    n = sub.add_parser("notes", help="render the notes for a manifest to stdout")
+    n.add_argument("manifest")
+    n.set_defaults(fn=cmd_notes)
+    c = sub.add_parser("check", help="validate a manifest (+ notes) before release")
+    c.add_argument("manifest")
+    c.add_argument("--published", action="store_true", help="also check GitHub")
+    c.set_defaults(fn=cmd_check)
+    sub.add_parser("pending", help="manifests not tagged yet").set_defaults(fn=cmd_pending)
+    r = sub.add_parser("readme", help="regenerate the README roadmap block")
+    r.add_argument("--check", action="store_true", help="fail if stale, don't write")
+    r.set_defaults(fn=cmd_readme)
+    a = p.parse_args(argv)
+    try:
+        return a.fn(a)
+    except Error as e:
+        print(f"jarvis-release: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

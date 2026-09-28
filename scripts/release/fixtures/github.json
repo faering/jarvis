@@ -1,0 +1,122 @@
+{
+  "repos/faering/jarvis/milestones": [
+    {
+      "number": 1,
+      "title": "Jarvis 1: Lives on the Pi",
+      "state": "open",
+      "due_on": "2026-10-18T00:00:00Z",
+      "html_url": "https://github.com/faering/jarvis/milestone/1",
+      "description": "Jarvis runs on the Pi from a CI deploy. Codename: Captain America. Components: agent + app versions recorded at release."
+    },
+    {
+      "number": 2,
+      "title": "Jarvis 2: Ears and mouth",
+      "state": "open",
+      "due_on": "2026-11-15T00:00:00Z",
+      "html_url": "https://github.com/faering/jarvis/milestone/2",
+      "description": "Jarvis listens and speaks. Codename: to be named. Components: recorded at release."
+    },
+    {
+      "number": 3,
+      "title": "Someday: not a Jarvis release",
+      "state": "open",
+      "due_on": null,
+      "html_url": "https://github.com/faering/jarvis/milestone/3",
+      "description": ""
+    }
+  ],
+  "repos/faering/jarvis/issues": [
+    {
+      "number": 37,
+      "title": "Per-component SSH deploy to Pi (deploy.yml)",
+      "state": "closed",
+      "state_reason": "completed",
+      "html_url": "https://github.com/faering/jarvis/issues/37",
+      "labels": [{ "name": "type:feature" }]
+    },
+    {
+      "number": 185,
+      "title": "Merging a release PR fixes #12 by accident",
+      "state": "closed",
+      "state_reason": "completed",
+      "html_url": "https://github.com/faering/jarvis/issues/185",
+      "labels": [{ "name": "type:bug" }]
+    },
+    {
+      "number": 140,
+      "title": "Logs moved to /var/log/jarvis",
+      "state": "closed",
+      "state_reason": "completed",
+      "html_url": "https://github.com/faering/jarvis/issues/140",
+      "labels": [{ "name": "type:feature" }, { "name": "change:changed" }]
+    },
+    {
+      "number": 141,
+      "title": "JARVIS_LLM_MODEL env var",
+      "state": "closed",
+      "state_reason": "completed",
+      "html_url": "https://github.com/faering/jarvis/issues/141",
+      "labels": [{ "name": "type:task" }, { "name": "change:deprecated" }]
+    },
+    {
+      "number": 145,
+      "title": "Add milestones to the roadmap skill",
+      "state": "closed",
+      "state_reason": "completed",
+      "html_url": "https://github.com/faering/jarvis/issues/145",
+      "labels": [{ "name": "type:task" }]
+    },
+    {
+      "number": 150,
+      "title": "Dropped idea",
+      "state": "closed",
+      "state_reason": "not_planned",
+      "html_url": "https://github.com/faering/jarvis/issues/150",
+      "labels": [{ "name": "type:feature" }]
+    },
+    {
+      "number": 158,
+      "title": "Typed conversation on the screen",
+      "state": "closed",
+      "state_reason": "completed",
+      "html_url": "https://github.com/faering/jarvis/issues/158",
+      "labels": [{ "name": "type:story" }]
+    },
+    {
+      "number": 162,
+      "title": "Named Jarvis releases",
+      "state": "open",
+      "state_reason": null,
+      "html_url": "https://github.com/faering/jarvis/issues/162",
+      "labels": [{ "name": "type:feature" }]
+    },
+    {
+      "number": 190,
+      "title": "A pull request",
+      "state": "closed",
+      "state_reason": null,
+      "html_url": "https://github.com/faering/jarvis/pull/190",
+      "labels": [{ "name": "type:feature" }],
+      "pull_request": {}
+    }
+  ],
+  "repos/faering/jarvis/releases": [
+    { "tag_name": "agent-v0.4.0", "draft": false, "prerelease": false, "assets": ["manifest.json"] },
+    { "tag_name": "agent-v0.3.0", "draft": false, "prerelease": false, "assets": ["manifest.json"] },
+    { "tag_name": "agent-v0.10.0", "draft": true, "prerelease": false, "assets": ["manifest.json"] },
+    { "tag_name": "app-v0.1.2", "draft": false, "prerelease": false, "assets": [] },
+    {
+      "tag_name": "app-v0.1.1",
+      "draft": false,
+      "prerelease": false,
+      "assets": ["Jarvis_0.1.1_arm64.deb", "manifest.json"]
+    },
+    { "tag_name": "app-v0.1.0", "draft": false, "prerelease": false, "assets": ["manifest.json"] }
+  ],
+  "release download agent-v0.4.0": {
+    "component": "agent",
+    "version": "0.4.0",
+    "protocol": 2
+  },
+  "release download app-v0.1.1": { "component": "app", "version": "0.1.1", "protocol": 2 }
+}
