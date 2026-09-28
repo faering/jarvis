@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/faering/jarvis/compare/app-v0.1.0...app-v0.1.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **app:** render correctly on the Pi, log there by default, open full screen on request ([bbc5f91](https://github.com/faering/jarvis/commit/bbc5f9158cf516f52bcdcfac9154601ef56c48ca)), closes [#167](https://github.com/faering/jarvis/issues/167)
+
 ## 0.1.0 (2026-09-27)
 
 
