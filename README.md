@@ -79,4 +79,5 @@ with `cd agent && uv run --frozen --extra test pytest -m models`.
 - [Agent state machine](docs/state-machine.md)
 - [Deployment](docs/deploy.md) · [Pi first-time setup](docs/pi-setup.md)
 - [Logging](docs/logging.md): format, levels, where logs live
+- [Models](docs/models.md): the model catalogue and the playground to try models
 - [GitHub MCP PAT setup](docs/github-mcp-pat.md)

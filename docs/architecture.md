@@ -74,7 +74,7 @@ A device picks one per role (`[models] llm = "<id>"` in its profile, or
 `JARVIS_MODEL_<ROLE>`) and says where each runtime is (`[runtimes.<name>] base_url`, or
 `JARVIS_RUNTIME_<NAME>_URL`). `JARVIS_<ROLE>_BACKEND|_BASE_URL|_MODEL` (or
 `[backends.<role>]`) still override single fields for experiments. Dev ↔ Pi is a config
-change, not a code change.
+change, not a code change. Trying models: [models.md](models.md).
 
 ## Configuration & capabilities
 One validated config (`agent/src/jarvis_agent/config/`), layered, later wins: **defaults →

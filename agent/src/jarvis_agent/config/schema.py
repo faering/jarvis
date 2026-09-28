@@ -66,6 +66,7 @@ class JarvisConfig(BaseModel):
 
     _sources: tuple[str, ...] = PrivateAttr(default=("defaults",))
     _resolved: BackendSettings | None = PrivateAttr(default=None)
+    _set_by: dict[tuple[str, ...], str] = PrivateAttr(default_factory=dict)
 
     @field_validator("capabilities", mode="before")
     @classmethod
@@ -74,6 +75,11 @@ class JarvisConfig(BaseModel):
         if isinstance(value, dict):
             return {k: {"enabled": v} if isinstance(v, str) else v for k, v in value.items()}
         return value
+
+    def set_by(self, *path: str) -> str | None:
+        """The layer that set the value at ``path``, e.g. ``set_by("models", "llm")`` ->
+        ``"env JARVIS_MODEL_LLM"``; ``None`` = a default (or a config built in code)."""
+        return self._set_by.get(path)
 
     @property
     def sources(self) -> tuple[str, ...]:
