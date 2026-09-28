@@ -117,6 +117,7 @@ def load_config(
             ]
         ) from None
     config._sources = tuple(sources)
+    config._set_by = {path: src for path, (_, src) in merged.items()}
     for cap, cfg in config.capabilities.items():  # so later checks can name the layer
         cfg._origins = {  # "" = the table itself, when it was given empty
             path[2] if len(path) > 2 else "": src

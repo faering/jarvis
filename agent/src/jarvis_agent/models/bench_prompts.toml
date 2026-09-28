@@ -1,0 +1,22 @@
+# Jarvis-style prompts for `python -m jarvis_agent.models bench`: short, like what Jarvis
+# is asked all day. Edit freely; keep ids stable so results stay comparable over time.
+
+[[prompt]]
+id = "greet"
+text = "Good morning Jarvis! How are you?"
+
+[[prompt]]
+id = "plan"
+text = "I have a stand-up at 9:30, the dentist at 14:00, and I want to start printing the new enclosure today. Plan my day in three short bullet points."
+
+[[prompt]]
+id = "note"
+text = "Take a note: the Pi's fan gets loud above 70 degrees, look into a bigger heatsink. Confirm in one sentence."
+
+[[prompt]]
+id = "spar"
+text = "I want to run the language model on the Pi's CPU instead of the NPU for now. Give me one strong argument against it, then your recommendation."
+
+[[prompt]]
+id = "fact"
+text = "In one sentence: what's the difference between RAM and storage?"
