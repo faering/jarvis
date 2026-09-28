@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/faering/jarvis/compare/agent-v0.2.0...agent-v0.3.0) (2026-09-28)
+
+
+### Features
+
+* **agent:** model catalogue with per-device role assignment ([27bf785](https://github.com/faering/jarvis/commit/27bf7857fddb3faf86a812b46f81dc3ca1150c79)), closes [#56](https://github.com/faering/jarvis/issues/56)
+* **agent:** model playground to list, pull, chat with and bench models ([304adea](https://github.com/faering/jarvis/commit/304adea9ac2417ad918b16ae0db594b41663fa77)), closes [#56](https://github.com/faering/jarvis/issues/56)
+
 ## [0.2.0](https://github.com/faering/jarvis/compare/agent-v0.1.0...agent-v0.2.0) (2026-09-27)
 
 
