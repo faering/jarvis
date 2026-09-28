@@ -39,3 +39,26 @@ jobs:
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           # Manifest-driven: reads release-please-config.json + .release-please-manifest.json.
+      # release-please (<17.10.4, which the v5 action bundles) renders every commit's
+      # issue reference as ", closes #n" — also `Refs #n` — so merging a release PR
+      # closed issues that were only referenced (#185). Rewrite every closing keyword
+      # in the open release PR bodies to "refs". Idempotent; runs after each update.
+      # The release notes are built from the merged PR body, so they say "refs" too.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/release-please
+      - name: release PR bodies reference issues, never close them
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for pr in $(gh pr list --state open --label "autorelease: pending" --json number -q '.[].number'); do
+            gh pr view "$pr" --json body -q .body > "$RUNNER_TEMP/body.md"
+            python3 scripts/release-please/unclose_refs.py < "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/fixed.md"
+            if cmp -s "$RUNNER_TEMP/body.md" "$RUNNER_TEMP/fixed.md"; then
+              echo "#$pr: no closing keywords"
+            else
+              gh pr edit "$pr" --body-file "$RUNNER_TEMP/fixed.md"
+              echo "#$pr: closing keywords rewritten to refs"
+            fi
+          done
