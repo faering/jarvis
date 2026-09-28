@@ -1,7 +1,8 @@
 # Models: the catalogue and the playground
 
 Which model fills each role (LLM, STT, TTS, vision, …) is config, backed by the model
-catalogue, [`catalogue.toml`](../agent/src/jarvis_agent/models/catalogue.toml) (#56).
+catalogue, [`catalogue.toml`](../agent/src/jarvis_agent/models/catalogue.toml)
+([ADR 0012](adr/0012-model-catalogue.md)).
 Try models with the playground before a device uses them; record what you learn in
 [`experiments/`](experiments/).
 
