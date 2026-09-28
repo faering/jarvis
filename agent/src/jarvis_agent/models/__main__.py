@@ -150,6 +150,10 @@ def cmd_list(config: JarvisConfig | None, problems: list[str], out: TextIO) -> i
 
 
 async def cmd_pull(args, config, factory: ClientFactory, out: TextIO) -> int:
+    if args.assigned:
+        return await pull_assigned(config, factory, out)
+    if not args.model:
+        raise UsageError("pull needs a model, or --assigned for every model this device uses")
     entry = entry_for(args.model)
     if entry.runtime != "ollama":
         raise UsageError(
@@ -160,6 +164,35 @@ async def cmd_pull(args, config, factory: ClientFactory, out: TextIO) -> int:
     async with factory(client_url(entry, base_url)) as client:
         await pull(client, entry.source, lambda line: print(f"  {line}", file=out, flush=True))
     print(f"{args.model} ({entry.source}) is ready.", file=out)
+    return 0
+
+
+async def pull_assigned(config: JarvisConfig | None, factory: ClientFactory, out: TextIO) -> int:
+    """Pull every Ollama model this device uses (what the deploy runs after starting)."""
+    if config is None:
+        raise UsageError("the config is invalid; `models list` shows why")
+    backends = config.backend_settings()
+    catalogue = load_catalogue()
+    wanted: dict[tuple[str, str], str] = {}  # (ollama url, model) -> role
+    for role, model_id in config.models.items():
+        entry = catalogue.model[model_id]
+        if entry.runtime != "ollama":
+            print(f"  {role}: {model_id} runs on {entry.runtime}, skipped", file=out)
+            continue
+        settings = getattr(backends, role, None)
+        if settings is not None and settings.backend != "openai":
+            continue  # overridden to mock/none here
+        base_url = settings.base_url if settings else base_url_for(config, entry, None)
+        source = settings.model if settings else entry.source
+        wanted.setdefault((ollama_root(base_url), source), role)
+    if not wanted:
+        print("No Ollama models assigned on this device.", file=out)
+        return 0
+    for (url, source), role in wanted.items():
+        print(f"{role}: pulling {source} from {url}", file=out, flush=True)
+        async with factory(url) as client:
+            await pull(client, source, lambda line: print(f"  {line}", file=out, flush=True))
+    print(f"Ready: {', '.join(source for _, source in wanted)}", file=out)
     return 0
 
 
@@ -341,7 +374,13 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("list", help="the catalogue and this device's models")
     for name, help_ in (("pull", "download a model (Ollama)"), ("chat", "talk to one model")):
         cmd = sub.add_parser(name, help=help_)
-        cmd.add_argument("model", help="catalogue id")
+        cmd.add_argument(
+            "model", nargs="?" if name == "pull" else None, help="catalogue id or ollama:<name>"
+        )
+        if name == "pull":
+            cmd.add_argument(
+                "--assigned", action="store_true", help="every Ollama model this device uses"
+            )
         cmd.add_argument("--base-url", help="the runtime's URL, instead of this device's config")
         if name == "chat":
             cmd.add_argument("--no-system", action="store_true", help="skip Jarvis's system prompt")
