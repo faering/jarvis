@@ -6,8 +6,12 @@ run-name: release-artifacts ${{ inputs.tag || github.event.release.tag_name }}
 # (release-please uses a PAT, so its `release` event starts this workflow):
 #   agent-v* -> multi-arch image ghcr.io/<owner>/jarvis-agent:<DOCKER_TAG> (+ latest)
 #   app-v*   -> Tauri .deb bundles (amd64 + arm64) attached to the GitHub release
-# Every release then gets manifest.json (version, docker tag, revision, protocol), uploaded
-# LAST: its presence means the release's artifacts are complete. deploy.yml consumes it.
+# Every release then gets manifest.json (version, docker tag, revision, protocol; the image
+# digest for the agent), uploaded LAST: its presence means the release's artifacts are
+# complete. deploy.yml consumes it.
+# Provenance (#121): each artifact gets a signed SLSA build-provenance attestation
+# (actions/attest, Sigstore), and its bundle is attached to the release as
+# <artifact>.sigstore.json so the Pi can verify it offline before installing.
 # Gate: nothing is built unless the tagged commit's `ci-ok` check passed.
 # Sources come from the tag; release tooling (.ci/) from github.workflow_sha, the commit
 # this workflow file was read from: the tag's commit on `release`, the dispatched branch
@@ -72,8 +76,13 @@ jobs:
     if: needs.resolve.outputs.component == 'agent'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # attach the attestation bundle
       packages: write
+      id-token: write # Sigstore signing (attestation)
+      attestations: write
+      artifact-metadata: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -104,6 +113,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - uses: docker/build-push-action@v7
+        id: build
         with:
           context: agent
           platforms: linux/amd64,linux/arm64
@@ -135,6 +145,20 @@ jobs:
               '.["org.opencontainers.image.version"] == $v and .["org.opencontainers.image.revision"] == $r' \
               <<<"$labels" >/dev/null
           done
+      - name: attest the image (provenance, pushed to GHCR)
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: attach the attestation bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" jarvis-agent-image.sigstore.json
+          gh release upload "$TAG" jarvis-agent-image.sigstore.json --clobber
 
   app:
     name: app bundle (${{ matrix.arch }})
@@ -150,6 +174,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write # gh release upload
+      id-token: write # Sigstore signing (attestation)
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -191,15 +218,28 @@ jobs:
       - name: tauri build (.deb)
         working-directory: frontend
         run: pnpm tauri build --bundles deb
-      - name: attach to release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: check the .deb
+        id: deb
         run: |
           shopt -s failglob
           debs=(frontend/src-tauri/target/release/bundle/deb/*_"${{ matrix.arch }}".deb)
+          [[ ${#debs[@]} -eq 1 ]] || { echo "::error::expected one .deb, got ${#debs[@]}"; exit 1; }
           dpkg-deb -f "${debs[0]}" Package Version Architecture
           [[ "$(dpkg-deb -f "${debs[0]}" Version)" == "$CANONICAL" ]]
-          gh release upload "$TAG" "${debs[@]}" --clobber
+          echo "path=${debs[0]}" >> "$GITHUB_OUTPUT"
+      - name: attest the .deb (provenance)
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.deb.outputs.path }}
+      - name: attach to release (.deb + its attestation bundle)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEB: ${{ steps.deb.outputs.path }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "$(basename "$DEB").sigstore.json"
+          gh release upload "$TAG" "$DEB" "$(basename "$DEB").sigstore.json" --clobber
 
   manifest:
     name: release manifest
@@ -225,6 +265,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           COMPONENT: ${{ needs.resolve.outputs.component }}
+          IMAGE_DIGEST: ${{ needs.agent.outputs.digest }}
         run: |
           image=""
           [[ "$COMPONENT" == agent ]] && image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jarvis-agent"
