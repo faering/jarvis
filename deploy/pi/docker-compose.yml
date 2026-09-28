@@ -23,6 +23,8 @@ services:
     environment:
       # Fixed here (wins over agent.env); JARVIS_LOG_LEVEL may be set in agent.env.
       JARVIS_LOG_DIR: /var/log/jarvis
+      # The device profile: its models (qwen2.5-1.5b on the ollama service below, #159).
+      JARVIS_PROFILE: home
     # jarvis-log's fixed GID (scripts/pi/setup.sh): write access to the log folder, nothing else.
     group_add: ["2750"]
     ports:
@@ -33,9 +35,23 @@ services:
       # State store (JARVIS_STATE_DB, default /data/jarvis.db): survives redeploys.
       - jarvis-state:/data
       - /var/log/jarvis:/var/log/jarvis
+    depends_on: [ollama]
+
+  # Local LLM server (docs/models.md). Pinned; reachable only on jarvis-net, no host port.
+  # The deploy pulls the models the agent is assigned (models pull --assigned).
+  ollama:
+    image: ollama/ollama:0.34.3
+    restart: unless-stopped
+    environment:
+      # Keep models loaded: a cold load on the Pi's CPU takes seconds per reply otherwise.
+      OLLAMA_KEEP_ALIVE: "-1"
+    networks: [jarvis-net]
+    volumes:
+      - ollama-models:/root/.ollama
 
 volumes:
   jarvis-state:
+  ollama-models:
 
 networks:
   jarvis-net:

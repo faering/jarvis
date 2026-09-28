@@ -53,6 +53,9 @@ flowchart LR
   It rolls out only that component, and refuses a pair that fails
   [COMPATIBILITY.md](../COMPATIBILITY.md). The agent must turn healthy and report the
   expected version; the app's installed package version must match.
+- **Models:** before replacing the agent, the deploy starts the Pi's `ollama` service and
+  pulls the models the new agent is assigned (`models pull --assigned`, [models](models.md)).
+  If that fails, the deploy stops and the running agent is left as it was.
 - **Rollback** is automatic on a failed rollout (previous image or `.deb`). To go back on
   purpose, run `deploy` by hand with the older version. A failed *first* agent deploy
   removes the container instead. The app `.deb` is staged in `~/jarvis/incoming/` and
