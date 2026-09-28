@@ -1,0 +1,100 @@
+name: jarvis-release
+
+# Named Jarvis releases (#162, docs/deploy.md "Cut a Jarvis release").
+# - On merge of a release PR (a new/changed releases/jarvis-N.toml on main): once main's
+#   ci-ok passed, tag jarvis-vN.M, publish "Jarvis N — <Codename>" with the reviewed notes
+#   (releases/jarvis-N.md) and the manifest attached, mark it Latest and close the milestone.
+#   The README roadmap block was already regenerated in the release PR.
+# - On a component release (agent-v* / app-v*, published by release-please): mark the
+#   newest Jarvis release Latest again, so the releases page leads with the tested set.
+# The release is created with GITHUB_TOKEN, so it starts no other workflow (release-artifacts
+# only builds agent-v* / app-v*).
+on:
+  push:
+    branches: [main]
+    paths: ["releases/jarvis-*.toml"]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: tag + publish pending Jarvis releases
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # tag + release
+      issues: write # close the milestone
+      checks: read # ci-gate
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # jarvis-v* tags decide what is pending
+      - id: pending
+        run: |
+          pending="$(scripts/release/jarvis-release pending | xargs)"
+          echo "manifests=$pending" >> "$GITHUB_OUTPUT"
+          echo "pending: ${pending:-none}"
+      - name: require green CI (ci-ok) on this commit
+        if: steps.pending.outputs.manifests != ''
+        run: scripts/release/ci-gate.sh "$(git rev-parse HEAD)"
+      - name: publish
+        if: steps.pending.outputs.manifests != ''
+        env:
+          MANIFESTS: ${{ steps.pending.outputs.manifests }}
+        run: |
+          for manifest in $MANIFESTS; do
+            # Offline checks only: the release PR's CI checked the published components.
+            env="$(scripts/release/jarvis-release check "$manifest")"
+            field() { sed -n "s/^$1=//p" <<<"$env"; }
+            tag="$(field TAG)"
+            gh release create "$tag" "$manifest" --target "$(git rev-parse HEAD)" \
+              --title "$(field TITLE)" --notes-file "$(field NOTES)" --latest
+            number="$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=all&per_page=100" |
+              jq --arg t "$(field MILESTONE)" '.[] | select(.title == $t) | .number')"
+            if [[ -n "$number" ]]; then
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/milestones/$number" -f state=closed >/dev/null
+            else
+              echo "::warning::milestone '$(field MILESTONE)' not found; not closed."
+            fi
+            echo "### Published [$(field TITLE)]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag)" \
+              >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: README roadmap block is current
+        if: steps.pending.outputs.manifests != ''
+        run: |
+          scripts/release/jarvis-release readme --check ||
+            echo "::warning::README roadmap block is stale; run scripts/release/jarvis-release readme in a PR."
+
+  latest:
+    name: keep the Jarvis release Latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'jarvis-v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # mark a release Latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: mark the newest Jarvis release Latest
+        run: |
+          id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]
+            | select((.tag_name | test("^jarvis-v[0-9]+\\.[0-9]+$")) and (.draft | not) and (.prerelease | not))
+            | [(.tag_name | ltrimstr("jarvis-v") | split(".") | map(tonumber)), .id] | @json' |
+            jq -s -r 'sort_by(.[0]) | last | .[1] // empty')"
+          if [[ -z "$id" ]]; then
+            echo "No Jarvis release yet; nothing to mark."
+            exit 0
+          fi
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -f make_latest=true \
+            --jq '"Latest: \(.name) (\(.tag_name))"'
