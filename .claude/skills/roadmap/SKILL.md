@@ -62,7 +62,7 @@ bugs → Fixed, `change:changed` / `change:deprecated` labels → Changed / Depr
 - **`milestones`** — list open milestones: due date, progress, overruns, items missing one.
 - **`milestone add <title> <due> <outcome>`** — propose, then create on OK.
 - **`plan-release <milestone>`** — the derived Added/Changed/Deprecated/Fixed list for a
-  milestone, for review or to cut the release. Before the milestone is done, list its open
+  milestone, for review. To cut the release, use the `jarvis-release` skill. Before the milestone is done, list its open
   and closed issues by those rules (open ones marked). To cut it, follow
   [docs/deploy.md "Cut a Jarvis release"](../../../docs/deploy.md#cut-a-jarvis-release):
   `scripts/release/jarvis-release draft --milestone "<title>" --codename "<name>"` writes
