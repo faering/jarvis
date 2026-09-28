@@ -64,8 +64,17 @@ def fake_gh(*args):
     return "".join(json.dumps(i) + "\n" for i in items)
 
 
+# A git hook (pre-push) runs these tests with GIT_DIR etc. set for the real repo; neither
+# the scratch repo nor the tool under test may inherit them, or git acts on the real repo.
+for _var in [k for k in os.environ if k.startswith("GIT_")]:
+    del os.environ[_var]
+CLEAN_ENV = dict(os.environ)
+
+
 def git(root, *args):
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", str(root), *args], check=True, capture_output=True, text=True, env=CLEAN_ENV
+    )
 
 
 class RepoCase(unittest.TestCase):
@@ -88,6 +97,7 @@ class RepoCase(unittest.TestCase):
         git(self.root, "config", "user.email", "t@example.com")
         git(self.root, "config", "user.name", "t")
         git(self.root, "config", "commit.gpgsign", "false")
+        git(self.root, "config", "tag.gpgsign", "false")
         (self.root / "README.md").write_text(README, encoding="utf-8")
         (self.root / "releases").mkdir()
 
