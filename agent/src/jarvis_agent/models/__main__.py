@@ -33,6 +33,7 @@ from jarvis_agent.models.probe import (
     ProbeError,
     Reply,
     chat,
+    cpu_temp,
     loaded_size,
     ollama_root,
     pull,
@@ -40,6 +41,7 @@ from jarvis_agent.models.probe import (
 )
 
 CHAT_ROLES = {"llm", "heavy_llm", "vlm"}
+THINK_HELP = "let thinking models think first (off by default: the hot path can't wait)"
 TIMEOUT = httpx.Timeout(300.0, connect=5.0)  # a cold model on a Pi CPU loads slowly
 
 type ClientFactory = Callable[[str], httpx.AsyncClient]
@@ -57,11 +59,18 @@ class UsageError(Exception):
 
 
 def entry_for(model_id: str) -> ModelEntry:
+    """A catalogue model, or an ad-hoc ``ollama:<name>`` to try one before it's catalogued."""
     catalogue = load_catalogue()
-    if model_id not in catalogue.model:
-        known = ", ".join(sorted(catalogue.model))
-        raise UsageError(f"unknown model {model_id!r}; the catalogue has: {known}")
-    return catalogue.model[model_id]
+    if model_id in catalogue.model:
+        return catalogue.model[model_id]
+    runtime, _, source = model_id.partition(":")
+    if runtime == "ollama" and source:
+        return ModelEntry(roles=("llm",), runtime="ollama", source=source, notes="ad hoc")
+    known = ", ".join(sorted(catalogue.model))
+    raise UsageError(
+        f"unknown model {model_id!r}; the catalogue has: {known} "
+        "(or try any Ollama model as ollama:<name>, e.g. ollama:gemma3:1b)"
+    )
 
 
 def base_url_for(config: JarvisConfig | None, entry: ModelEntry, override: str | None) -> str:
@@ -192,6 +201,7 @@ async def cmd_chat(args, config, factory: ClientFactory, stdin: TextIO, out: Tex
                 entry.source,
                 messages,
                 lambda t: print(t, end="", file=out, flush=True),
+                think=args.think,
             )
             history.append({"role": "assistant", "content": reply.text})
             stats = [f"first token {fmt_s(reply.ttft_s)}s", f"{fmt_rate(reply)} tok/s"]
@@ -230,6 +240,7 @@ async def cmd_bench(args, config, factory: ClientFactory, out: TextIO) -> int:
         base_url = base_url_for(config, entry, args.base_url)
         print(f"{mid}: ", end="", file=sys.stderr, flush=True)
         replies: dict[str, list[Reply]] = {}
+        temp_before = cpu_temp()
         async with factory(client_url(entry, base_url)) as client:
             if entry.runtime == "ollama" and not args.warm:
                 await unload(client, entry.source)  # LOAD = a cold start
@@ -238,18 +249,28 @@ async def cmd_bench(args, config, factory: ClientFactory, out: TextIO) -> int:
                     messages: list[ChatMessage] = [{"role": "user", "content": prompt["text"]}]
                     if system:
                         messages.insert(0, {"role": "system", "content": system})
-                    reply = await chat(client, entry.runtime, entry.source, messages)
+                    reply = await chat(
+                        client, entry.runtime, entry.source, messages, think=args.think
+                    )
                     replies.setdefault(prompt["id"], []).append(reply)
                     print(".", end="", file=sys.stderr, flush=True)
             size = await loaded_size(client, entry.source) if entry.runtime == "ollama" else None
         print(file=sys.stderr)
-        results[mid] = {"entry": entry, "replies": replies, "size": size}
+        temps = (temp_before, cpu_temp())
+        results[mid] = {"entry": entry, "replies": replies, "size": size, "temps": temps}
     report(results, prompts, args, out)
     return 0
 
 
+def temps(pair: tuple[float | None, float | None] | None) -> str:
+    """``before→after`` in °C; a hot Pi 5 throttles (around 80 °C), which lowers tok/s."""
+    if not pair or None in pair:
+        return "-"
+    return f"{pair[0]:.0f}→{pair[1]:.0f}"
+
+
 def summary_rows(results: dict[str, dict]) -> list[list[str]]:
-    rows = [["MODEL", "LOAD s", "FIRST TOKEN s", "TOK/S", "TOKENS", "IN MEMORY"]]
+    rows = [["MODEL", "LOAD s", "FIRST TOKEN s", "TOK/S", "TOKENS", "IN MEMORY", "CPU °C"]]
     for mid, r in results.items():
         every = [rep for reps in r["replies"].values() for rep in reps]
         first = every[0]
@@ -269,6 +290,7 @@ def summary_rows(results: dict[str, dict]) -> list[list[str]]:
                 f"{approx}{statistics.median(rates):.1f}" if rates else "-",
                 f"{approx}{sum(tokens)}" if tokens else "-",
                 size,
+                temps(r.get("temps")),
             ]
         )
     return rows
@@ -286,7 +308,8 @@ def report(results: dict[str, dict], prompts: list[dict[str, str]], args, out: T
     print(f"- Device: `{platform.node()}` ({platform.machine()})", file=out)
     print(
         f"- Prompts: {len(prompts)} × {args.runs} run(s); system prompt: "
-        f"{'none' if args.no_system else 'Jarvis default'}",
+        f"{'none' if args.no_system else 'Jarvis default'}; "
+        f"thinking: {'on' if args.think else 'off'}",
         file=out,
     )
     print(
@@ -322,6 +345,7 @@ def parser() -> argparse.ArgumentParser:
         cmd.add_argument("--base-url", help="the runtime's URL, instead of this device's config")
         if name == "chat":
             cmd.add_argument("--no-system", action="store_true", help="skip Jarvis's system prompt")
+            cmd.add_argument("--think", action="store_true", help=THINK_HELP)
     bench = sub.add_parser("bench", help="compare models on the Jarvis prompt set")
     bench.add_argument("models", nargs="+", help="catalogue ids")
     bench.add_argument("--runs", type=int, default=1, help="runs per prompt (default 1)")
@@ -329,6 +353,7 @@ def parser() -> argparse.ArgumentParser:
     bench.add_argument("--markdown", action="store_true", help="full report with the answers")
     bench.add_argument("--base-url", help="the runtime's URL, instead of this device's config")
     bench.add_argument("--no-system", action="store_true", help="skip Jarvis's system prompt")
+    bench.add_argument("--think", action="store_true", help=THINK_HELP)
     bench.add_argument(
         "--warm", action="store_true", help="don't unload the model first (LOAD is then ~0)"
     )
