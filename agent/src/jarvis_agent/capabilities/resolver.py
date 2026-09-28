@@ -46,7 +46,7 @@ class Available:
         """
         why = {f"hardware:{n}": s.reason for n, s in hardware.items() if not s.present}
         backends = {"llm", "stt", "tts", "vision"}
-        if config.backends.heavy_llm.backend != "none":
+        if config.backend_settings().heavy_llm.backend != "none":
             backends.add("heavy_llm")
         else:
             why["backend:heavy_llm"] = "not configured"

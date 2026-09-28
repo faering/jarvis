@@ -67,8 +67,13 @@ every role has a deterministic mock, the default in tests, CI and the devcontain
 | Vision | `detect` | mock only | IMX500 / Hailo (#35, #60) |
 
 ¹ Speaks Ollama's API; its OpenAI `/v1` compatibility is unverified until tested on the Pi.
-Selection is config: `JARVIS_<ROLE>_BACKEND=openai|mock` plus `_BASE_URL` / `_MODEL`
-(see `.env.example`) or `[backends.<role>]` in a config file, so dev ↔ Pi is a config
+**Which model fills each role is config, backed by a model catalogue**
+(`agent/src/jarvis_agent/models/catalogue.toml`, #56): every model Jarvis knows, with its
+roles (llm, heavy_llm, stt, tts, vlm, wake_word, embed, vision), runtime and pinned source.
+A device picks one per role (`[models] llm = "<id>"` in its profile, or
+`JARVIS_MODEL_<ROLE>`) and says where each runtime is (`[runtimes.<name>] base_url`, or
+`JARVIS_RUNTIME_<NAME>_URL`). `JARVIS_<ROLE>_BACKEND|_BASE_URL|_MODEL` (or
+`[backends.<role>]`) still override single fields for experiments. Dev ↔ Pi is a config
 change, not a code change.
 
 ## Configuration & capabilities

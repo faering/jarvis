@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
 from jarvis_agent.backends.config import BackendSettings
 from jarvis_agent.hardware import Toggle
 from jarvis_agent.logs.config import LogSettings
+from jarvis_agent.models import Role, RuntimeConfig, load_catalogue, resolve_backends
 from jarvis_agent.store.config import StoreSettings
 
 
@@ -59,8 +60,12 @@ class JarvisConfig(BaseModel):
     store: StoreSettings = StoreSettings()
     capabilities: dict[str, CapabilityConfig] = {}
     logging: LogSettings = LogSettings()
+    # role -> catalogue model id (#56); runtime name -> where it is reached on this device
+    models: dict[Role, str] = {}
+    runtimes: dict[str, RuntimeConfig] = {}
 
     _sources: tuple[str, ...] = PrivateAttr(default=("defaults",))
+    _resolved: BackendSettings | None = PrivateAttr(default=None)
 
     @field_validator("capabilities", mode="before")
     @classmethod
@@ -76,8 +81,16 @@ class JarvisConfig(BaseModel):
         return self._sources
 
     def backend_settings(self) -> BackendSettings:
-        """For ``build_backends()``."""
-        return self.backends
+        """For ``build_backends()``: ``backends`` with the ``[models]`` assignment applied.
+
+        Raises ``ModelProblems`` if the assignment doesn't fit the catalogue;
+        ``load_config()`` checks this up front and reports it as a ``ConfigError``.
+        """
+        if self._resolved is None:
+            self._resolved = resolve_backends(
+                self.models, self.runtimes, self.backends, load_catalogue()
+            )
+        return self._resolved
 
     def store_settings(self) -> StoreSettings:
         """For ``open_state()``."""

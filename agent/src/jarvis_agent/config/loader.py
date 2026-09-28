@@ -5,8 +5,10 @@
 - **local file**: the TOML file at ``JARVIS_CONFIG`` (e.g. ``/data/jarvis.toml``); unset =
   none. Set but missing is an error, not a silent skip.
 - **env**: the existing ``JARVIS_*`` names (see ``ENV_KEYS``), plus
-  ``JARVIS_HW_<NAME>=on|off|auto`` and ``JARVIS_CAP_<NAME>=on|off|auto``. Empty = unset,
-  so a copied ``.env.example`` changes nothing.
+  ``JARVIS_HW_<NAME>=on|off|auto``, ``JARVIS_CAP_<NAME>=on|off|auto``,
+  ``JARVIS_MODEL_<ROLE>=<catalogue id>`` and ``JARVIS_RUNTIME_<NAME>_URL`` /
+  ``JARVIS_RUNTIME_<NAME>_API_KEY``. Empty = unset, so a copied ``.env.example`` changes
+  nothing.
 
 Tables merge key by key; any other value (including lists) replaces the lower layer's.
 Every problem found is collected into one ``ConfigError``.
@@ -22,6 +24,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from jarvis_agent.config.schema import JarvisConfig
+from jarvis_agent.models import ModelProblems
 
 type Leaves = dict[tuple[str, ...], tuple[Any, str]]  # path -> (value, source)
 
@@ -39,7 +42,8 @@ ENV_KEYS: dict[str, tuple[str, ...]] = {
     "JARVIS_LOG_DIR": ("logging", "dir"),
     "JARVIS_LOG_LEVEL": ("logging", "level"),
 }
-ENV_PREFIXES = {"JARVIS_HW_": "hardware", "JARVIS_CAP_": "capabilities"}
+ENV_PREFIXES = {"JARVIS_HW_": "hardware", "JARVIS_CAP_": "capabilities", "JARVIS_MODEL_": "models"}
+RUNTIME_ENV = {"_URL": "base_url", "_API_KEY": "api_key"}  # JARVIS_RUNTIME_<NAME><suffix>
 LOWERCASE = {"backend", "notes", "todo", "calendar"}
 
 
@@ -103,6 +107,15 @@ def load_config(
         config = JarvisConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigError([_describe(err, merged) for err in exc.errors()]) from None
+    try:
+        config.backend_settings()  # the [models] assignment against the catalogue
+    except ModelProblems as exc:
+        raise ConfigError(
+            [
+                f"models.{role}: {msg}" + _from(merged, ("models", role))
+                for role, msg in exc.problems.items()
+            ]
+        ) from None
     config._sources = tuple(sources)
     for cap, cfg in config.capabilities.items():  # so later checks can name the layer
         cfg._origins = {  # "" = the table itself, when it was given empty
@@ -134,9 +147,19 @@ def _env_leaves(env: Mapping[str, str]) -> Leaves:
             path = ENV_KEYS[var]
             leaves[path] = (value.lower() if path[-1] in LOWERCASE else value, f"env {var}")
             continue
+        if var.startswith("JARVIS_RUNTIME_"):
+            name = var.removeprefix("JARVIS_RUNTIME_")
+            for suffix, field in RUNTIME_ENV.items():
+                if name.endswith(suffix) and len(name) > len(suffix):
+                    runtime = name.removesuffix(suffix).lower()
+                    leaves[("runtimes", runtime, field)] = (value, f"env {var}")
+            continue
         for prefix, section in ENV_PREFIXES.items():
             if var.startswith(prefix) and len(var) > len(prefix):
                 key = var.removeprefix(prefix).lower()
+                if section == "models":  # a model id: case kept
+                    leaves[(section, key)] = (value, f"env {var}")
+                    continue
                 path = (section, key) if section == "hardware" else (section, key, "enabled")
                 leaves[path] = (value.lower(), f"env {var}")
     return leaves
@@ -183,6 +206,10 @@ def _unflatten(leaves: Leaves) -> dict[str, Any]:
             node = node.setdefault(key, {})
         node[path[-1]] = value
     return root
+
+
+def _from(merged: Leaves, path: tuple[str, ...]) -> str:
+    return f" (from {merged[path][1]})" if path in merged else ""
 
 
 def _describe(err: Any, merged: Leaves) -> str:
