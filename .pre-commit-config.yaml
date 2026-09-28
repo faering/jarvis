@@ -127,6 +127,14 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: unclose-refs-test
+        name: release PR unclose-refs tests
+        language: system
+        entry: python3 -m unittest discover -s scripts/release-please
+        files: ^scripts/release-please/
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: jarvis-logs-test
         name: jarvis-logs + bash logger tests
         language: system

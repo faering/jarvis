@@ -117,6 +117,9 @@ scope.** So:
   `Closes #n` in the **PR description**, not only in the commits.
 - Use `Refs #n` (no keyword) to link without closing; cross-repo (rare here) is
   `Closes owner/repo#100`.
+- **Release PRs never close issues.** release-please lists every commit reference as
+  "closes #n" (even `Refs #n`), so `release-please.yml` rewrites them to "refs" in open
+  release PR bodies (#185). Issues close via their own PR, never via a release.
 
 **Cross-component compatibility (actively maintain this):** independent versions mean
 agent `vX` and app `vY` must be proven to work together.
