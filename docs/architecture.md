@@ -43,6 +43,30 @@ flowchart TB
   style APP fill:#F8FAFC,stroke:#16A34A,color:#14532D
 ```
 
+## Code layout
+Four layers: **hardware** (probed) → **backends** (model serving) → **capabilities**
+(user-facing abilities, each with a local or remote provider) → **tools** (MCP). Jarvis core
+runs anywhere (Pi, VPS, laptop); what it can do is resolved at startup from config and
+probing. Ecosystem tools will come over **MCP** and pushed events over **MQTT**, with Jarvis
+always connecting outbound.
+
+```
+agent/src/jarvis_agent/
+  loop/          the voice loop (turns, state)       routing/       picks a model per request
+  backends/      model-serving clients              models/        model catalogue + playground
+  capabilities/  manifests + providers              hardware/      device probes (Pi-only drivers)
+  config/        layered config; profiles/ (TOML)   store/         local state (SQLite)
+  speech/        speech output queue                logs/          logging (docs/logging.md)
+frontend/src/    the app: agent client, presence screens, conversation, logging
+frontend/src-tauri/  the app's Rust side (window, log file)
+packages/        shared TypeScript: protocol (the WebSocket schema), config
+deploy/pi/       the Pi's compose stack (agent + Ollama)
+scripts/         pi/ setup · deploy/ root scripts · release/ tools · logs/ jarvis-logs
+.claude/         agent skills and rules · .devcontainer/ · .github/ workflows
+```
+Planned: `tools/` (MCP client), `discovery/` (catalogs, mDNS, trust), `events/` (MQTT) in
+the agent; `ui` in `packages/`.
+
 ## Compute layers
 `agent/src/jarvis_agent/routing/` places each backend on a layer — **camera** (IMX500),
 **NPU** (Hailo), **CPU** (Pi orchestrator), **remote** (cloud / larger model) — and picks
