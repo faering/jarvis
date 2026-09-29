@@ -120,6 +120,11 @@ stub nft <<'EOF'
 #!/usr/bin/env bash
 echo "nft $*" >>"$STUB/calls"
 EOF
+stub update-alternatives <<'EOF'
+#!/usr/bin/env bash
+mkdir -p "$JARVIS_ROOT/etc/alternatives"
+ln -sfn "${!#}" "$JARVIS_ROOT/etc/alternatives/${@: -2:1}"
+EOF
 stub tailscale <<'EOF'
 #!/usr/bin/env bash
 [[ -f "$STUB/ts_down" ]] && echo '{"BackendState":"NeedsLogin"}' || echo '{"BackendState":"Running"}'
@@ -131,7 +136,7 @@ new_pi() { # new_pi <name>: sets R, S, REPO
   R="$d/root" S="$d/stub" REPO="$d/repo"
   mkdir -p "$R/etc" "$R/home/pi/.ssh" "$R/root" "$S/units" "$REPO/scripts/pi" "$REPO/scripts/deploy" "$REPO/deploy/pi" \
     "$REPO/scripts/lib" "$REPO/scripts/logs"
-  cp "$here/setup.sh" "$here/jarvis-netwatch" "$REPO/scripts/pi/"
+  cp "$here/setup.sh" "$here/jarvis-netwatch" "$here/jarvis-shell.sh" "$REPO/scripts/pi/"
   cp "$src/scripts/lib/log.sh" "$REPO/scripts/lib/"
   cp "$src/scripts/lib/verify.sh" "$src/scripts/lib/refresh-trusted-root" "$REPO/scripts/lib/"
   cp "$src/scripts/logs/jarvis-logs" "$REPO/scripts/logs/"
@@ -240,6 +245,28 @@ check "history: root .bashrc sources it" grep -q "jarvis-history.sh; fi # jarvis
 hist="$(HOME="$R/home/pi" bash -ic "source '$R$f'; echo \$HISTSIZE \$HISTFILESIZE; source '$R$f'; echo \"\$PROMPT_COMMAND\"" 2>/dev/null)"
 check "history: applies in an interactive shell, PROMPT_COMMAND added once" \
   test "$hist" == "$(printf '50000 100000\nhistory -a')"
+f=/etc/profile.d/jarvis-shell.sh
+check "shell: profile is the repo copy" cmp -s "$src/scripts/pi/jarvis-shell.sh" "$R$f"
+check "shell: operator .bashrc sources it" grep -q "jarvis-shell.sh; fi # jarvis$" "$R/home/pi/.bashrc"
+check "shell: root .bashrc sources it" grep -q "jarvis-shell.sh; fi # jarvis$" "$R/root/.bashrc"
+check "shell: vim installed" grep -qx vim "$S/installed"
+for alt in editor vi vim; do
+  check "shell: $alt -> vim.basic" test "$(readlink "$R/etc/alternatives/$alt")" == /usr/bin/vim.basic
+done
+# The prompt in a scratch repo (unborn branch + an untracked file = dirty). Git must never
+# reach the real repo: hooks export GIT_DIR/GIT_WORK_TREE (.claude/rules/git-in-tests.md).
+g="$tmp/shell-repo"
+prompt="$(
+  while read -r v; do unset "$v"; done < <(compgen -e | grep '^GIT_')
+  git init -q -b main "$g" && touch "$g/new"
+  cd "$g" && bash --norc -ic "source '$R$f'; false; printf '%s|' \"\${PS1@P}\"; alias ll; echo \$EDITOR" 2>/dev/null
+)"
+plain="$(tr -d '\001\002' <<<"$prompt" | sed 's/\x1b\[[0-9;]*m//g')"
+check "shell: prompt shows user, folder, branch and dirty mark" \
+  grep -q "^$(id -un) ➜ .*shell-repo (main ✗) \\$ |" <<<"$plain"
+check "shell: red arrow after a failed command" grep -q $'\033\\[1;31m\002➜' <<<"$prompt"
+check "shell: ll is ls -la" grep -q "alias ll='ls -la'" <<<"$prompt"
+check "shell: EDITOR is vim" grep -qx vim <<<"${prompt##*$'\n'}"
 check "log group jarvis-log with fixed GID 2750" grep -qx "jarvis-log:x:2750:" "$S/group"
 check "log group created with --gid" grep -q "groupadd --gid 2750 jarvis-log" "$S/calls"
 check "/var/log/jarvis is 2775 (setgid)" mode /var/log/jarvis 2775
