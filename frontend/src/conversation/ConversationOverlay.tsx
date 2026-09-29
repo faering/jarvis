@@ -40,7 +40,7 @@ export function ConversationOverlay({
           <span className="caption-who">
             {caption.who === "user" ? "You" : "Jarvis"}
             {caption.tone && (
-              <span className="caption-note"> · {NOTE[caption.tone]}</span>
+              <span className="caption-note"> ({NOTE[caption.tone]})</span>
             )}
           </span>
           {caption.text}

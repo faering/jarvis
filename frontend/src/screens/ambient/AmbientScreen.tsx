@@ -56,7 +56,7 @@ export function AmbientScreen({
         </li>
         <li className="ambient-card">
           <span className="ambient-card-label">Weather</span>
-          <span>14° · rain from 15:00</span>
+          <span>14°, rain from 15:00</span>
         </li>
       </ul>
       <div className="ambient-orb">
