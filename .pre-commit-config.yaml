@@ -141,6 +141,14 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: netwatch-test
+        name: Pi network watchdog tests
+        language: system
+        entry: scripts/pi/test_netwatch.sh
+        files: ^scripts/(pi/(jarvis-netwatch|test_netwatch\.sh)|lib/log\.sh)$
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: unclose-refs-test
         name: release PR unclose-refs tests
         language: system
