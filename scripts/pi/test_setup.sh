@@ -107,6 +107,15 @@ case "$1" in
       sed -n 's/^ *\([A-Za-z]\+\) \(.*\)/\L\1\E \2/p' <<<"$body" ;;
 esac
 EOF
+# iw: wlan0's power saving, "on" until setup turns it off (state in $STUB/iw_ps).
+stub iw <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  "dev wlan0 get power_save") echo "Power save: $(cat "$STUB/iw_ps" 2>/dev/null || echo on)" ;;
+  "dev wlan0 set power_save off") echo "iw $*" >>"$STUB/calls"; echo off >"$STUB/iw_ps" ;;
+  *) exit 1 ;;
+esac
+EOF
 stub nft <<'EOF'
 #!/usr/bin/env bash
 echo "nft $*" >>"$STUB/calls"
@@ -245,6 +254,12 @@ check "logger folder 755" mode /usr/local/lib/jarvis 755
 check "logger is the repo copy" cmp -s "$src/scripts/lib/log.sh" "$R/usr/local/lib/jarvis/log.sh"
 check "jarvis-logs installed 755" mode /usr/local/bin/jarvis-logs 755
 check "jarvis-logs is the repo copy" cmp -s "$src/scripts/logs/jarvis-logs" "$R/usr/local/bin/jarvis-logs"
+# wifi (#206)
+check "wifi: power saving off by default" has /etc/NetworkManager/conf.d/10-jarvis-wifi.conf "wifi.powersave=2"
+check "wifi: reconnects forever" has /etc/NetworkManager/conf.d/10-jarvis-wifi.conf "connection.autoconnect-retries=0"
+check "wifi: only for Wi-Fi devices" has /etc/NetworkManager/conf.d/10-jarvis-wifi.conf "match-device=type:wifi"
+check "wifi: config 644" mode /etc/NetworkManager/conf.d/10-jarvis-wifi.conf 644
+check "wifi: power saving turned off now, without re-joining" grep -qx "iw dev wlan0 set power_save off" "$S/calls"
 # release provenance (#121)
 check "gh apt repo, signed by its pinned key" has /etc/apt/sources.list.d/github-cli.list \
   "deb [arch=arm64 signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"

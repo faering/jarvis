@@ -505,6 +505,28 @@ EOF
     defer "sshd doesn't use /etc/ssh/authorized_keys for $DEPLOY_USER"
 fi
 
+# ---- 5b. wifi: stay connected (#206) --------------------------------------------------------
+# On 2026-09-29 the Wi-Fi dropped, NetworkManager gave up after its 4 default attempts, and
+# the Pi stayed offline all day. Global connection defaults (NetworkManager.conf), so the
+# OS-generated netplan-* connection isn't edited; they apply where it doesn't set its own.
+section "wifi"
+if ensure_file /etc/NetworkManager/conf.d/10-jarvis-wifi.conf 644 root:root <<EOF; then
+# $MARK (#206)
+[connection-jarvis-wifi]
+match-device=type:wifi
+# 2 = disable Wi-Fi power saving: a dozing chip misses reconnects.
+wifi.powersave=2
+# 0 = retry forever instead of giving up after 4 attempts.
+connection.autoconnect-retries=0
+EOF
+  reload_if_active NetworkManager reload
+fi
+# Also now, without re-joining the network: NetworkManager applies the file on the next
+# connect. Never in --check (power saving is runtime state, not drift).
+if ((!check)) && command -v iw >/dev/null && iw dev wlan0 get power_save 2>/dev/null | grep -q ': on'; then
+  act "Wi-Fi power saving off now (wlan0)" iw dev wlan0 set power_save off
+fi
+
 # ---- 6. firewall (nftables) ----------------------------------------------------------------
 section "firewall"
 nft_conf="$tmpd/nftables.conf"
