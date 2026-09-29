@@ -216,7 +216,7 @@ check "nft: never flushes Docker's rules" bash -c "! grep -q 'flush ruleset' '$R
 check "nft: checked before loaded" bash -c "grep -n '^nft' '$S/calls' | head -1 | grep -q -- '-c -f'"
 check "nft: stop only drops our table" has /etc/systemd/system/nftables.service.d/10-jarvis.conf \
   "ExecStop=/usr/sbin/nft delete table inet jarvis"
-f=/etc/systemd/journald.conf.d/10-jarvis.conf
+f=/etc/systemd/journald.conf.d/99-jarvis.conf
 check "journald persistent" has $f "Storage=persistent"
 check "journald size cap" has $f "SystemMaxUse=500M"
 check "journald retention" has $f "MaxRetentionSec=1month"
@@ -287,7 +287,9 @@ check "netwatch is the repo copy" cmp -s "$src/scripts/pi/jarvis-netwatch" "$R/u
 check "netwatch 755" mode /usr/local/lib/jarvis/netwatch 755
 check "netwatch service is sandboxed" has $f "ProtectSystem=strict"
 check "netwatch keeps its fail counter between runs" has $f "RuntimeDirectoryPreserve=yes"
-check "netwatch timer every 2 minutes" has /etc/systemd/system/jarvis-netwatch.timer "OnUnitActiveSec=2min"
+check "netwatch: a run never blocks the next" has $f "TimeoutStartSec=150s"
+check "netwatch: the last reboot survives reboots" has $f "StateDirectory=jarvis-netwatch"
+check "netwatch timer: 45 s after each check ends" has /etc/systemd/system/jarvis-netwatch.timer "OnUnitInactiveSec=45s"
 check "netwatch timer enabled" test "$(cat "$S/units/jarvis-netwatch.timer")" == enabled
 check "avahi disabled" test "$(cat "$S/units/avahi-daemon.service")" == disabled
 check "bluetooth kept" test "$(cat "$S/units/bluetooth.service")" == enabled
@@ -301,6 +303,14 @@ check "second run: 0 changes" grep -q "applied 0 change(s)" <<<"$out"
 check "second run: files untouched" test "$before" == "$(snapshot)"
 run --check
 check "--check after setup: no drift" test "$rc" -eq 0
+
+echo "journald drop-in from before #212 is replaced"
+echo "# old" >"$R/etc/systemd/journald.conf.d/10-jarvis.conf"
+run --check
+check "--check: old journald drop-in is drift" grep -q "DRIFT: remove journald 10-jarvis.conf" <<<"$out"
+run
+check "old journald drop-in removed" test ! -e "$R/etc/systemd/journald.conf.d/10-jarvis.conf"
+check "new journald drop-in kept" has /etc/systemd/journald.conf.d/99-jarvis.conf "Storage=persistent"
 
 echo "drift is reported, then repaired"
 echo "PasswordAuthentication yes" >"$R/etc/ssh/sshd_config.d/10-jarvis.conf"

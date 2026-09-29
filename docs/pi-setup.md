@@ -104,8 +104,10 @@ settings), or on the Pi `sudo docker login ghcr.io` with a `read:packages` PAT. 
   If it's blocked: `sudo rfkill unblock bluetooth`.
 - **Moving networks:** nothing changes in GitHub. Add the new Wi-Fi first (`sudo nmtui`).
   Captive portals won't work; WPA2-Enterprise may need IT's details.
-- **Wi-Fi watchdog:** every 2 minutes it pings the router; after 2 misses it reconnects the
-  Wi-Fi, and restarts NetworkManager if that doesn't help (#207). Check it with
-  `systemctl list-timers jarvis-netwatch.timer` and `jarvis-logs --component system`.
+- **Wi-Fi watchdog:** about once a minute it pings the router. After 2 misses in a row it
+  reconnects the Wi-Fi, then restarts NetworkManager, then reloads the Wi-Fi driver, then
+  reboots (at most once an hour; a step that hangs reboots at once) (#207, #212). Check it
+  with `systemctl list-timers jarvis-netwatch.timer` and `jarvis-logs --component system`;
+  `fixed_by=` says which step brought it back.
 - **Reaching the Pi:** `ssh <user>@<pi>` or VS Code Remote-SSH from your tailnet, or
   [Raspberry Pi Connect](https://connect.raspberrypi.com) in a browser (not used by deploys).

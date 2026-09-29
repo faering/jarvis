@@ -1,30 +1,48 @@
 #!/usr/bin/env bash
-# Network watchdog (#207): if the Pi's Wi-Fi loses the router, get it back without anyone
-# rebooting the Pi. Setup installs it root-owned as /usr/local/lib/jarvis/netwatch and runs
-# it every 2 minutes (jarvis-netwatch.timer).
+# Network watchdog (#207, #212): if the Pi's Wi-Fi loses the router, get it back, whatever
+# it takes. Setup installs it root-owned as /usr/local/lib/jarvis/netwatch; the timer starts
+# it again 45 s after each run ends (jarvis-netwatch.timer).
 #
 # Healthy = the default route goes over Wi-Fi and its gateway answers a ping (no internet
-# needed). Default route over another device (e.g. Ethernet), or no Wi-Fi device: nothing
-# to do. After 2 failed checks in a row it reconnects the Wi-Fi; if that doesn't help, it
-# restarts NetworkManager on every 4th failed check. Logs go to jarvis-system-<date>.log.
+# needed). Default route over another device (e.g. Ethernet), or no Wi-Fi: nothing to do.
+# Otherwise one step per failed check in a row:
+#   1 wait (a blip), 2 reconnect, 3 restart NetworkManager, 4 reload the Wi-Fi driver,
+#   5 reboot.
+# Every step gets at most 45 s. A step that hangs means the driver is wedged (a stuck
+# process can't even be killed), so it reboots right away with --force, which doesn't wait
+# for services to stop. At most one reboot an hour; within that hour the ladder starts over.
+# Logs go to jarvis-system-<date>.log (logger netwatch).
 set -uo pipefail
 state_dir="${JARVIS_NETWATCH_STATE:-/run/jarvis-netwatch}"
+keep_dir="${JARVIS_NETWATCH_KEEP:-/var/lib/jarvis-netwatch}"
 log_lib="${JARVIS_LOG_LIB:-/usr/local/lib/jarvis/log.sh}"
+sys_net="${JARVIS_NETWATCH_SYS_NET:-/sys/class/net}"
+proc_modules="${JARVIS_NETWATCH_MODULES:-/proc/modules}"
+step_s="${JARVIS_NETWATCH_STEP_S:-45}"
+reboot_gap_s="${JARVIS_NETWATCH_REBOOT_GAP_S:-3600}"
 if [[ $EUID -eq 0 ]]; then # test hooks are never honoured as root
-  state_dir=/run/jarvis-netwatch log_lib=/usr/local/lib/jarvis/log.sh
+  state_dir=/run/jarvis-netwatch keep_dir=/var/lib/jarvis-netwatch
+  log_lib=/usr/local/lib/jarvis/log.sh sys_net=/sys/class/net proc_modules=/proc/modules
+  step_s=45 reboot_gap_s=3600
   PATH=/usr/sbin:/usr/bin:/sbin:/bin
 fi
 export JARVIS_LOG_COMPONENT=system
 # shellcheck source=../lib/log.sh
 if [[ -f "$log_lib" ]]; then . "$log_lib"; else log() { echo "[$1] $2: ${*:3}" >&2; }; fi
 
-fails_file="$state_dir/fails"
-mkdir -p "$state_dir"
-fails="$(cat "$fails_file" 2>/dev/null || echo 0)"
-[[ "$fails" =~ ^[0-9]+$ ]] || fails=0
+# The Wi-Fi device from sysfs, not nmcli: NetworkManager may be the thing that's stuck.
+wifi=""
+for d in "$sys_net"/*; do
+  [[ -d "$d/wireless" ]] && wifi="${d##*/}" && break
+done
+[[ -n "$wifi" ]] || exit 0
 
-wifi="$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2 == "wifi" {print $1; exit}')"
-[[ -n "$wifi" ]] || exit 0 # no Wi-Fi on this device
+mkdir -p "$state_dir" "$keep_dir"
+# State: "<failed checks in a row> <last step taken>".
+read -r fails last_step 2>/dev/null <"$state_dir/state"
+[[ "${fails:-}" =~ ^[0-9]+$ ]] || fails=0
+last_step="${last_step:-none}"
+save() { echo "$fails $last_step" >"$state_dir/state"; }
 
 healthy() {
   local route gw
@@ -36,24 +54,79 @@ healthy() {
   [[ -n "$gw" ]] && ping -c 2 -W 2 -q "$gw" >/dev/null 2>&1
 }
 
+# step <name> <cmd...>: run it with a deadline, without ever waiting on a stuck process.
+# Returns the command's status, or 124 if it was still running at the deadline.
+step() {
+  local name="$1" pid i
+  shift
+  last_step="$name"
+  save
+  log INFO netwatch "trying: $name" device="$wifi" failed_checks="$fails"
+  "$@" >/dev/null 2>&1 &
+  pid=$!
+  for ((i = 0; i < step_s * 4; i++)); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.25
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null
+    log ERROR netwatch "$name hung (driver stuck?)" device="$wifi" timeout_s="$step_s"
+    return 124
+  fi
+  wait "$pid" && return 0
+  log WARN netwatch "$name failed" device="$wifi" failed_checks="$fails"
+  return 1
+}
+
+# shellcheck disable=SC2329 # run through step
+reload_driver() {
+  local mods
+  # brcmfmac_wcc (vendor part) sorts after brcmfmac, so reverse order unloads it first.
+  mods="$(awk '$1 ~ /^brcmfmac/ {print $1}' "$proc_modules" | sort -r)"
+  [[ -n "$mods" ]] || return 1
+  # shellcheck disable=SC2086 # one module per word
+  modprobe -r $mods && modprobe brcmfmac
+}
+
+reboot_pi() { # reboot_pi <reason> [--force]
+  local now last=0
+  now="$(date +%s)"
+  read -r last 2>/dev/null <"$keep_dir/last-reboot"
+  [[ "${last:-}" =~ ^[0-9]+$ ]] || last=0
+  if ((now - last < reboot_gap_s)); then
+    log WARN netwatch "reboot skipped: the last one was $((now - last)) s ago; starting over" \
+      device="$wifi" failed_checks="$fails"
+    fails=1 last_step=reboot-skipped
+    save
+    exit 0
+  fi
+  echo "$now" >"$keep_dir/last-reboot"
+  last_step=reboot
+  save
+  log WARN netwatch "rebooting: $1" device="$wifi" failed_checks="$fails" force="${2:+yes}"
+  timeout 30 systemctl reboot ${2:+"$2"} ||
+    log ERROR netwatch "reboot failed" device="$wifi"
+  exit 0
+}
+
 if healthy; then
-  ((fails == 0)) || log INFO netwatch "network back" device="$wifi" after_failed_checks="$fails"
-  echo 0 >"$fails_file"
+  ((fails == 0)) ||
+    log INFO netwatch "network back" device="$wifi" after_failed_checks="$fails" fixed_by="$last_step"
+  fails=0 last_step=none
+  save
   exit 0
 fi
 
 fails=$((fails + 1))
-echo "$fails" >"$fails_file"
+save
 log WARN netwatch "router unreachable" device="$wifi" failed_checks="$fails"
-((fails >= 2)) || exit 0 # one blip: wait for the next check
-
-if ((fails % 4 == 0)); then
-  log WARN netwatch "restarting NetworkManager" device="$wifi" failed_checks="$fails"
-  systemctl restart NetworkManager ||
-    log ERROR netwatch "NetworkManager restart failed" failed_checks="$fails"
-else
-  log INFO netwatch "reconnecting the Wi-Fi" device="$wifi" failed_checks="$fails"
-  nmcli device connect "$wifi" >/dev/null 2>&1 ||
-    log WARN netwatch "reconnect failed" device="$wifi" failed_checks="$fails"
-fi
+wait_s=$((step_s > 6 ? step_s - 5 : 1))
+case "$fails" in
+  1) rc=0 ;; # one blip: wait for the next check
+  2) step reconnect nmcli --wait "$wait_s" device connect "$wifi"; rc=$? ;;
+  3) step restart-networkmanager systemctl restart NetworkManager; rc=$? ;;
+  4) step reload-driver reload_driver; rc=$? ;;
+  *) reboot_pi "no network after $((fails - 1)) steps" ;;
+esac
+((rc != 124)) || reboot_pi "a recovery step hung" --force
 exit 0
