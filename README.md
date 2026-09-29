@@ -1,26 +1,29 @@
-# Jarvis
-
 [![CI](https://github.com/faering/jarvis/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/faering/jarvis/actions/workflows/ci.yml)
 [![Jarvis](https://img.shields.io/github/v/release/faering/jarvis?filter=jarvis-v*&display_name=release&label=Jarvis)](https://github.com/faering/jarvis/releases?q=jarvis-v&expanded=true)
 [![agent](https://img.shields.io/github/v/release/faering/jarvis?filter=agent-v*&label=agent)](https://github.com/faering/jarvis/releases?q=agent-v&expanded=true)
 [![app](https://img.shields.io/github/v/release/faering/jarvis?filter=app-v*&label=app)](https://github.com/faering/jarvis/releases?q=app-v&expanded=true)
 
+# Jarvis
+
 A handheld AI companion on a Raspberry Pi 5: it plans your day, takes notes, keeps your
 calendar, and spars with you on your hobby projects. Local models first, its own face on
 its own screen.
 
-**[Architecture](docs/architecture.md)** · **[Set up a Pi](docs/pi-setup.md)** ·
-**[Deploy](docs/deploy.md)** · **[Develop](docs/development.md)** ·
-**[Models](docs/models.md)** · **[Logging](docs/logging.md)** ·
-**[Decisions](docs/adr/README.md)** · **[Contributing](AGENTS.md)** ·
-**[Board](https://github.com/users/faering/projects/3)**
+| I want to… | Read |
+|---|---|
+| Understand how Jarvis works | [Architecture](docs/architecture.md) |
+| Run Jarvis on my machine | [Develop](docs/development.md) |
+| Put Jarvis on a Raspberry Pi | [Set up a Pi](docs/pi-setup.md), then [Deploy](docs/deploy.md) |
+| Try or change its models | [Models](docs/models.md) |
+| Read its logs | [Logging](docs/logging.md) |
+| Know why it's built this way | [Decisions](docs/adr/README.md) |
 
 ## What it is
 
 ```mermaid
 flowchart LR
-  you((You)) -- "type · talk" --> app["🖥️ App<br/>face + screen"]
-  app <-- WebSocket --> agent["🧠 Agent<br/>voice loop · router · tools"]
+  you((You)) -- "type, talk" --> app["🖥️ App<br/>face + screen"]
+  app <-- WebSocket --> agent["🧠 Agent<br/>voice loop, router, tools"]
   agent --> local["⚡ Local models<br/>Pi CPU → Hailo NPU"]
   agent -.-> heavy["☁️ Heavier models<br/>Faelab / cloud"]
 ```
@@ -45,29 +48,25 @@ More in [Architecture](docs/architecture.md).
 ```mermaid
 timeline
   title Jarvis releases
-  Jarvis 1 · Captain America : Lives on the Pi : due 2026-10-18
-  Jarvis 2 : Ears and mouth : due 2026-11-15
+  Jarvis 1 - Captain America : Lives on the Pi : due 2026-10-18
+  Jarvis 2 - TBD : Ears and mouth : due 2026-11-15
 ```
 
-[Milestones](https://github.com/faering/jarvis/milestones?state=all) · [Jarvis releases](https://github.com/faering/jarvis/releases?q=jarvis-v&expanded=true)
+See the [milestones](https://github.com/faering/jarvis/milestones?state=all) and the [Jarvis releases](https://github.com/faering/jarvis/releases?q=jarvis-v&expanded=true).
 <!-- roadmap:end -->
-
-## Get started
-
-| I want to… | Go to |
-|---|---|
-| Run Jarvis on my machine | [Develop](docs/development.md): devcontainer, `docker compose up -d`, the app |
-| Put Jarvis on a Raspberry Pi | [Set up a Pi](docs/pi-setup.md), then [Deploy](docs/deploy.md) |
-| Try or change its models | [Models](docs/models.md): the catalogue and the playground |
-| Read its logs | [Logging](docs/logging.md): `jarvis-logs -f` |
-| Work on the code | [Contributing](AGENTS.md) and the [Board](https://github.com/users/faering/projects/3) |
 
 ## Repository
 
-```
-agent/       the agent (Python)             frontend/   the app (TypeScript/React + Rust)
-packages/    shared TypeScript (protocol)   deploy/     the Pi's compose stack
-scripts/     setup, deploy, release tools   docs/       everything else
-```
+In the order GitHub lists it above:
 
-Folder by folder: [Architecture → Code layout](docs/architecture.md#code-layout).
+```
+.claude/          # how the AI agents that help build Jarvis work: skills and rules
+.devcontainer/    # the development environment, everything in one container
+.github/          # CI and releases: tests every PR, builds releases, deploys to the Pi
+agent/            # Jarvis's brain: holds the conversation, picks a model per task (Python)
+deploy/           # what runs on a device: the Pi's stack (agent + local model server)
+docs/             # how it works and how to set it up; decisions in docs/adr
+frontend/         # Jarvis's face: the app on its screen (React UI in a small Rust shell)
+packages/         # shared TypeScript, like the agent-app message format
+scripts/          # tools for devices and releases: Pi setup, deploy, logs, releases
+```

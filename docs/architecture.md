@@ -61,8 +61,8 @@ frontend/src/    the app: agent client, presence screens, conversation, logging
 frontend/src-tauri/  the app's Rust side (window, log file)
 packages/        shared TypeScript: protocol (the WebSocket schema), config
 deploy/pi/       the Pi's compose stack (agent + Ollama)
-scripts/         pi/ setup · deploy/ root scripts · release/ tools · logs/ jarvis-logs
-.claude/         agent skills and rules · .devcontainer/ · .github/ workflows
+scripts/         pi/ setup, deploy/ root scripts, release/ tools, logs/ jarvis-logs
+.claude/         agent skills and rules; .devcontainer/; .github/ workflows
 ```
 Planned: `tools/` (MCP client), `discovery/` (catalogs, mDNS, trust), `events/` (MQTT) in
 the agent; `ui` in `packages/`.
