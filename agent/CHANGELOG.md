@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/faering/jarvis/compare/agent-v0.5.1...agent-v0.6.0) (2026-09-29)
+
+
+### Features
+
+* **agent:** "minimize" makes Jarvis send the app the window.minimize command ([43ab192](https://github.com/faering/jarvis/commit/43ab19224ffa6c3c685f02cb1f3cfc57b9a4e591)), closes [#221](https://github.com/faering/jarvis/issues/221)
+
 ## [0.5.1](https://github.com/faering/jarvis/compare/agent-v0.5.0...agent-v0.5.1) (2026-09-29)
 
 
