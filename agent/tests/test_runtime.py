@@ -86,6 +86,21 @@ def test_say_streams_transcript_reply_and_state(ws: WebSocketTestSession) -> Non
     ]
 
 
+def test_minimize_phrase_sends_reply_then_command(ws: WebSocketTestSession) -> None:
+    ws.send_json({"v": 0, "type": "say", "id": "1", "payload": {"text": "Minimize, please"}})
+    frames = [(f["type"], f["payload"]) for f in _frames_until_idle(ws)]
+
+    assert frames == [
+        ("state", {"state": "listening"}),
+        ("state", {"state": "routing"}),
+        ("transcript", {"text": "Minimize, please"}),
+        ("state", {"state": "speaking"}),
+        ("reply", {"text": "Minimizing.", "done": True, "degraded": False}),
+        ("command", {"name": "window.minimize"}),
+        ("state", {"state": "idle"}),
+    ]
+
+
 def test_deep_say_is_offloaded(ws: WebSocketTestSession) -> None:
     ws.send_json({"v": 0, "type": "say", "payload": {"text": "plan my week", "deep": True}})
     frames = _frames_until_idle(ws)

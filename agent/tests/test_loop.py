@@ -16,6 +16,7 @@ from jarvis_agent.backends import LLM, TTS, BackendError, ChatMessage
 from jarvis_agent.backends.mock import MockSTT
 from jarvis_agent.loop import (
     Cancel,
+    Command,
     LoopBusy,
     LoopEvent,
     LoopState,
@@ -273,6 +274,25 @@ async def test_hot_reply_streams_into_speech() -> None:
         assert h.sink.played == [b"Hello there.", b"How are you?"]
         assert h.handles == []  # never offloaded
         assert await h.memory() == [("user", "hi"), ("assistant", "Hello there. How are you?")]
+
+
+async def test_minimize_phrase_sends_the_command_without_the_model() -> None:
+    llm = ScriptLLM(["should not be used"])
+    async with running(llm) as h:
+        h.loop.say("Jarvis, minimize.")
+        await h.events.until_idle_after(1)
+
+        assert h.events.states == [LISTENING, ROUTING, SPEAKING, IDLE]
+        assert h.events.replies == [ReplyText(text="Minimizing.", done=True)]
+        commands = [e for e in h.events.events if isinstance(e, Command)]
+        assert commands == [Command("window.minimize")]
+        # The confirmation comes first, then the command, all in one turn.
+        kinds = [type(e).__name__ for e in h.events.events]
+        assert kinds.index("ReplyText") < kinds.index("Command")
+        assert len({e.trace_id for e in h.events.events}) == 1
+        assert h.sink.played == [b"Minimizing."]
+        assert llm.prompts == []  # the model was not asked
+        assert await h.memory() == []  # control, not conversation
 
 
 async def test_audio_source_goes_through_stt() -> None:
