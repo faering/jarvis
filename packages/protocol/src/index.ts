@@ -19,6 +19,7 @@ export const MESSAGE_TYPES = [
   "state",
   "transcript",
   "reply",
+  "command",
 ] as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[number];
@@ -124,4 +125,28 @@ export function asError(payload: Record<string, unknown>): ErrorPayload {
     code: typeof code === "string" ? code : "unknown",
     message: typeof message === "string" ? message : "",
   };
+}
+
+/**
+ * Commands the app executes for the agent: the schema's `$defs.command` name enum
+ * (ADR 0013). The agent decides; the app only runs these, and ignores other names so a
+ * newer agent can add one. INITIAL APPROACH, to revisit (#223): the agent picks them from
+ * fixed phrases for now; the model is meant to decide.
+ */
+export const COMMAND_NAMES = ["window.minimize"] as const;
+
+export type CommandName = (typeof COMMAND_NAMES)[number];
+
+export interface CommandPayload {
+  name: CommandName;
+}
+
+/** The command in a `command` payload, or null when its name is unknown or missing. */
+export function asCommand(
+  payload: Record<string, unknown>,
+): CommandPayload | null {
+  const { name } = payload;
+  if (typeof name !== "string") return null;
+  if (!(COMMAND_NAMES as readonly string[]).includes(name)) return null;
+  return { name: name as CommandName };
 }
