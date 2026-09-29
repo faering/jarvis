@@ -14,6 +14,8 @@ import {
   initialScreen,
   saveDemo,
 } from "./screens/selection.ts";
+import { bindWindowControls } from "./window/controls.ts";
+import { minimizeWindow } from "./window/minimize.ts";
 
 const version: string = import.meta.env.VITE_APP_VERSION ?? "dev";
 
@@ -54,6 +56,17 @@ export function App({ agent }: { agent: AgentClient }) {
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
   }, [openInput]);
+  // Minimize on the agent's command or Ctrl+M, also while typing (ADR 0013; the agent's
+  // fixed-phrase trigger is an initial approach, #223).
+  useEffect(
+    () =>
+      bindWindowControls({
+        agent,
+        target: globalThis,
+        minimize: (source) => void minimizeWindow(source),
+      }),
+    [agent],
+  );
 
   return (
     <div className="app">

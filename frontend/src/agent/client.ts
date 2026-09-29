@@ -1,11 +1,13 @@
 import { backoffDelay } from "./backoff.ts";
 import {
+  asCommand,
   asError,
   asHello,
   envelope,
   parseEnvelope,
   PROTOCOL_VERSION,
   traceIdOf,
+  type CommandPayload,
   type Envelope,
   type ErrorPayload,
 } from "@jarvis/protocol";
@@ -20,6 +22,9 @@ const TURN_FRAMES: ReadonlySet<string> = new Set([
   "reply",
   "error",
 ]);
+
+/** Frames whose trace id sets the log turn: the turn frames, and commands a turn caused. */
+const TRACED_FRAMES: ReadonlySet<string> = new Set([...TURN_FRAMES, "command"]);
 
 type LostReason = "closed" | "hello_timeout" | "pong_timeout";
 
@@ -58,6 +63,7 @@ export interface AgentClientOptions {
 
 type Listener = () => void;
 type FrameListener = (frame: Envelope) => void;
+type CommandListener = (command: CommandPayload) => void;
 
 /**
  * Framework-free client for the agent WebSocket bridge. Reconnects with
@@ -83,6 +89,7 @@ export class AgentClient {
   };
   private readonly listeners = new Set<Listener>();
   private readonly turnListeners = new Set<FrameListener>();
+  private readonly commandListeners = new Set<CommandListener>();
   private saySeq = 0;
   private socket: WebSocket | null = null;
   private attempt = 0;
@@ -115,6 +122,12 @@ export class AgentClient {
   readonly onTurnFrame = (listener: FrameListener): (() => void) => {
     this.turnListeners.add(listener);
     return () => this.turnListeners.delete(listener);
+  };
+
+  /** Known `command`s from the agent (ADR 0013); unknown names never reach listeners. */
+  readonly onCommand = (listener: CommandListener): (() => void) => {
+    this.commandListeners.add(listener);
+    return () => this.commandListeners.delete(listener);
   };
 
   /**
@@ -178,7 +191,7 @@ export class AgentClient {
       log.warn("invalid frame dropped", { bytes: raw.length });
       return;
     }
-    if (TURN_FRAMES.has(frame.type)) setTurn(traceIdOf(frame.payload));
+    if (TRACED_FRAMES.has(frame.type)) setTurn(traceIdOf(frame.payload));
     log.trace("frame received", {
       type: frame.type,
       id: frame.id ?? undefined,
@@ -217,7 +230,28 @@ export class AgentClient {
         this.update({ lastError: error });
         break;
       }
+      case "command":
+        this.onCommandFrame(frame);
+        break;
     }
+  }
+
+  /**
+   * The agent decides, the app executes (ADR 0013): only names in the schema's closed
+   * list run; others are logged and ignored, so a newer agent can add one. The agent
+   * picks commands from fixed phrases for now, an INITIAL APPROACH to revisit (#223).
+   */
+  private onCommandFrame(frame: Envelope): void {
+    const command = asCommand(frame.payload);
+    if (!command) {
+      const { name } = frame.payload;
+      log.warn("unknown command ignored", {
+        name: typeof name === "string" ? name : undefined,
+      });
+      return;
+    }
+    log.info("command received", { name: command.name });
+    for (const listener of this.commandListeners) listener(command);
   }
 
   private onHello(frame: Envelope): void {

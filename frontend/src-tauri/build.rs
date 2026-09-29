@@ -17,7 +17,13 @@ fn main() {
             }
         }
     }
-    tauri_build::build()
+    // Only the webview's own commands, each behind a generated `allow-*` permission that
+    // capabilities/default.json grants (ADR 0013).
+    tauri_build::try_build(
+        tauri_build::Attributes::new()
+            .app_manifest(tauri_build::AppManifest::new().commands(&["minimize_window"])),
+    )
+    .expect("failed to run tauri-build");
 }
 
 fn app_version() -> String {

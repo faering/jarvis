@@ -371,3 +371,85 @@ describe("AgentClient conversation", () => {
     expect(types).toHaveLength(2);
   });
 });
+
+describe("AgentClient commands", () => {
+  const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
+  let records: LogRecord[] = [];
+  beforeEach(() => {
+    records = [];
+    setTurn(null);
+    configureLogging({ level: "TRACE", sinks: [(r) => records.push(r)] });
+  });
+  afterEach(() => configureLogging({ sinks: [] }));
+
+  const find = (message: string) =>
+    records.filter((r) => r.message === message);
+
+  /** Open a client, send each command payload, and collect what listeners got. */
+  async function sendCommands(...payloads: object[]) {
+    const { client, server } = await setup();
+    const got: string[] = [];
+    client.onCommand((command) => got.push(command.name));
+    client.start();
+    await waitFor(client, (s) => s.state === "open");
+    for (const payload of payloads) {
+      server.sockets[0]!.send(
+        JSON.stringify({ v: 0, type: "command", id: null, payload }),
+      );
+    }
+    // Every command, known or not, is logged once handled.
+    const handled = () =>
+      find("command received").length + find("unknown command ignored").length;
+    for (let i = 0; i < 50 && handled() < payloads.length; i++) await sleep(10);
+    return got;
+  }
+
+  it("hands a known command to onCommand listeners, in its turn", async () => {
+    const got = await sendCommands({
+      name: "window.minimize",
+      trace_id: TRACE_ID,
+    });
+    expect(got).toEqual(["window.minimize"]);
+    expect(find("command received")[0]).toMatchObject({
+      level: "INFO",
+      turn: TRACE_ID,
+      attrs: "name=window.minimize",
+    });
+  });
+
+  it("ignores and logs an unknown command name", async () => {
+    const got = await sendCommands({ name: "shell.run" });
+    expect(got).toEqual([]);
+    expect(find("unknown command ignored")[0]).toMatchObject({
+      level: "WARN",
+      attrs: "name=shell.run",
+    });
+  });
+
+  it("ignores a malformed command payload", async () => {
+    const got = await sendCommands({ name: 42 }, {});
+    expect(got).toEqual([]);
+    expect(find("unknown command ignored")).toHaveLength(2);
+  });
+
+  it("stops notifying after unsubscribe", async () => {
+    const { client, server } = await setup();
+    const got: string[] = [];
+    const off = client.onCommand((command) => got.push(command.name));
+    off();
+    client.start();
+    await waitFor(client, (s) => s.state === "open");
+    server.sockets[0]!.send(
+      JSON.stringify({
+        v: 0,
+        type: "command",
+        id: null,
+        payload: { name: "window.minimize" },
+      }),
+    );
+    for (let i = 0; i < 50 && find("command received").length < 1; i++)
+      await sleep(10);
+    expect(find("command received")).toHaveLength(1);
+    expect(got).toEqual([]);
+  });
+});
