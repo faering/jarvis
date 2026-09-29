@@ -144,3 +144,9 @@ The app imports types and guards from `@jarvis/protocol`, and the agent keeps
 `jarvis_agent/protocol.py`. A test on each side fails if its code drifts from the schema. To
 add a message type, add it to the schema first, then use it on either side. Bump `v` only for
 a breaking change.
+
+**The gate** ([ADR 0013](adr/0013-agent-decides-app-executes.md)): the agent decides, the app
+executes. The agent sends `command` {name} from a closed list (`window.minimize`); the app runs
+only names it knows, through its Rust side, and ignores the rest. Local input (Ctrl+M) may
+trigger the same actions directly. For now the agent picks commands from fixed phrases; the
+model is meant to decide (#223).

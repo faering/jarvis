@@ -156,6 +156,22 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "command"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/command"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -351,6 +367,32 @@
           "done": true,
           "degraded": false,
           "spoken": false
+        }
+      ]
+    },
+    "command": {
+      "description": "agent -> app: a command for the app to execute (ADR 0013). The agent decides; the app executes only names it knows, through its native (Tauri) side, and logs and ignores any other name, so adding a name is not breaking. INITIAL APPROACH, to revisit (#223): the agent picks commands from fixed phrases for now; the model is meant to decide them.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "What to do. window.minimize: minimize the app's window (it comes back from the taskbar).",
+          "type": "string",
+          "enum": ["window.minimize"]
+        },
+        "trace_id": {
+          "description": "W3C trace id (32 lowercase hex) of the voice turn or request this frame belongs to, created by the agent; both sides log it (docs/logging.md). Absent outside a turn.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "required": ["name"],
+      "examples": [
+        {
+          "name": "window.minimize"
+        },
+        {
+          "name": "window.minimize",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
         }
       ]
     }

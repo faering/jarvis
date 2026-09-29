@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import schema from "../protocol.schema.json" with { type: "json" };
 import {
+  asCommand,
   asError,
+  COMMAND_NAMES,
   asHello,
   ENVELOPE_KEYS,
   envelope,
@@ -15,7 +17,7 @@ import {
 } from "./index.ts";
 
 interface PayloadDef {
-  properties: Record<string, { type: string }>;
+  properties: Record<string, { type: string; enum?: string[] }>;
   required: string[];
   examples: Record<string, unknown>[];
 }
@@ -178,4 +180,23 @@ describe("trace id", () => {
     expect(traceIdOf({ trace_id: "4BF92F35" })).toBeNull();
     expect(traceIdOf({ trace_id: 42 })).toBeNull();
   });
+});
+
+describe("asCommand", () => {
+  it("has exactly the schema's command names", () => {
+    expect([...COMMAND_NAMES].sort()).toEqual(
+      [...(def("command").properties.name?.enum ?? [])].sort(),
+    );
+  });
+
+  it.each(def("command").examples)("accepts the example %j", (example) => {
+    expect(asCommand(example)).toEqual({ name: example.name });
+  });
+
+  it.each([{}, { name: 3 }, { name: "window.explode" }, { name: "" }])(
+    "ignores %j",
+    (payload) => {
+      expect(asCommand(payload)).toBeNull();
+    },
+  );
 });

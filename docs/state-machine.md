@@ -44,7 +44,8 @@ WebSocket (envelope v0, additive): client `say` {text, deep?}; agent `state` {st
 it in memory is best-effort (a failure is logged). `spoken: false` means the speech queue
 refused or dropped it, or its TTS/playback had already failed, so it was shown but not
 (fully) said. Speech plays on after `done`; later failures are only logged. A new client gets `hello`, then the current
-`state`.
+`state`. The agent may also send `command` {name} (ADR 0013), for now only
+after a fixed phrase such as "minimize".
 
 ## Speech output
 `jarvis_agent.speech.SpeechQueue` implements Speaking.
