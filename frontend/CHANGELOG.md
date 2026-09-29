@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/faering/jarvis/compare/app-v0.1.1...app-v0.1.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **app:** no middle dot in the reply note or the ambient placeholder ([8920080](https://github.com/faering/jarvis/commit/8920080431e79285100fd5e7213e2102e05f9d33))
+
 ## [0.1.1](https://github.com/faering/jarvis/compare/app-v0.1.0...app-v0.1.1) (2026-09-28)
 
 
