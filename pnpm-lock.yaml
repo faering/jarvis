@@ -175,6 +175,9 @@ importers:
       '@jarvis/protocol':
         specifier: workspace:*
         version: link:../packages/protocol
+      '@tauri-apps/api':
+        specifier: 2.11.1
+        version: 2.11.1
       '@tauri-apps/plugin-log':
         specifier: 2.9.2
         version: 2.9.2
@@ -521,6 +524,9 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
   '@tauri-apps/api@2.12.0':
     resolution: {integrity: sha512-fUSxFX8VABYe9W9K5ROdEaKVkNUFRcMSRofjruvaxztXA+I0XnQHcYHF8m/a6iExRUxsUf0HsFWhPBuH9IgzJw==}
@@ -1622,6 +1628,8 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@tauri-apps/api@2.11.1': {}
 
   '@tauri-apps/api@2.12.0': {}
 

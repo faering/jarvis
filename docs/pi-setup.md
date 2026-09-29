@@ -99,8 +99,9 @@ settings), or on the Pi `sudo docker login ghcr.io` with a `read:packages` PAT. 
 - **Updates:** Debian, Pi and Tailscale updates install daily. If one needs a reboot
   (kernel, libc), the Pi reboots at 04:00. Docker updates are manual: `sudo apt upgrade`.
 - **The Jarvis app** starts full screen at login once it has been deployed (autostart in
-  `/etc/xdg/autostart/jarvis.desktop`). Close it with Alt+F4; start it again from the menu
-  (windowed) or with `jarvis-app --fullscreen`.
+  `/etc/xdg/autostart/jarvis.desktop`). Minimize it with Ctrl+M or by asking Jarvis
+  ("minimize"), and bring it back from the taskbar. Close it with Alt+F4; start it again
+  from the menu (windowed) or with `jarvis-app --fullscreen`.
 - **Bluetooth keyboard:** run `bluetoothctl`, then `power on`, `agent on`, `default-agent`,
   `scan on`; put the keyboard in pairing mode, then `pair <MAC>` (type the PIN shown on the
   keyboard + Enter), `trust <MAC>` (reconnects after reboots), `connect <MAC>`, `quit`.
