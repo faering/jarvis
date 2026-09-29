@@ -125,6 +125,12 @@ stub update-alternatives <<'EOF'
 mkdir -p "$JARVIS_ROOT/etc/alternatives"
 ln -sfn "${!#}" "$JARVIS_ROOT/etc/alternatives/${@: -2:1}"
 EOF
+# modprobe -c: Raspberry Pi OS's brcmfmac options, unless $STUB/no_brcm_opts.
+stub modprobe <<'EOF'
+#!/usr/bin/env bash
+[[ "$1" == -c && ! -e "$STUB/no_brcm_opts" ]] && echo "options brcmfmac roamoff=1 feature_disable=0x282000"
+exit 0
+EOF
 stub tailscale <<'EOF'
 #!/usr/bin/env bash
 [[ -f "$STUB/ts_down" ]] && echo '{"BackendState":"NeedsLogin"}' || echo '{"BackendState":"Running"}'
@@ -283,7 +289,14 @@ check "jarvis-logs installed 755" mode /usr/local/bin/jarvis-logs 755
 check "jarvis-logs is the repo copy" cmp -s "$src/scripts/logs/jarvis-logs" "$R/usr/local/bin/jarvis-logs"
 # wifi (#206)
 check "wifi: power saving off by default" has /etc/NetworkManager/conf.d/10-jarvis-wifi.conf "wifi.powersave=2"
-check "wifi: reconnects forever" has /etc/NetworkManager/conf.d/10-jarvis-wifi.conf "connection.autoconnect-retries=0"
+f=/etc/NetworkManager/conf.d/10-jarvis-wifi.conf
+check "wifi: auto-connects forever (a [main] setting)" \
+  bash -c "sed -n '/^\[main\]/,/^\[/p' '$R$f' | grep -qx autoconnect-retries-default=0"
+check "wifi: no unsupported autoconnect-retries in a [connection] section" \
+  bash -c "! grep -q '^connection.autoconnect-retries' '$R$f'"
+check "wifi: never gives up on the password" \
+  bash -c "sed -n '/^\[connection-jarvis-wifi\]/,\$p' '$R$f' | grep -qx connection.auth-retries=0"
+check "wifi: driver options present: no warning" bash -c "! grep -q 'Wi-Fi driver option' <<<\"\$1\"" _ "$out"
 check "wifi: only for Wi-Fi devices" has /etc/NetworkManager/conf.d/10-jarvis-wifi.conf "match-device=type:wifi"
 check "wifi: config 644" mode /etc/NetworkManager/conf.d/10-jarvis-wifi.conf 644
 check "wifi: power saving turned off now, without re-joining" grep -qx "iw dev wlan0 set power_save off" "$S/calls"
@@ -338,6 +351,14 @@ check "--check: old journald drop-in is drift" grep -q "DRIFT: remove journald 1
 run
 check "old journald drop-in removed" test ! -e "$R/etc/systemd/journald.conf.d/10-jarvis.conf"
 check "new journald drop-in kept" has /etc/systemd/journald.conf.d/99-jarvis.conf "Storage=persistent"
+
+echo "missing Wi-Fi driver workarounds are reported"
+touch "$S/no_brcm_opts"
+run --check
+check "--check: missing driver options are drift" test "$rc" -eq 1
+check "--check: names roamoff" grep -q "Wi-Fi driver option roamoff=1 is not set" <<<"$out"
+check "--check: names feature_disable" grep -q "Wi-Fi driver option feature_disable=0x282000 is not set" <<<"$out"
+rm "$S/no_brcm_opts"
 
 echo "drift is reported, then repaired"
 echo "PasswordAuthentication yes" >"$R/etc/ssh/sshd_config.d/10-jarvis.conf"
