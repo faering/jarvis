@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/faering/jarvis/compare/agent-v0.5.0...agent-v0.5.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **agent:** the playground's reply stats are comma-separated ([a8205df](https://github.com/faering/jarvis/commit/a8205dfabdd7e303bf02e5fbecc535577c466b7c))
+
 ## [0.5.0](https://github.com/faering/jarvis/compare/agent-v0.4.0...agent-v0.5.0) (2026-09-28)
 
 
