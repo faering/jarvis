@@ -569,15 +569,33 @@ fi
 # OS-generated netplan-* connection isn't edited; they apply where it doesn't set its own.
 section "wifi"
 if ensure_file /etc/NetworkManager/conf.d/10-jarvis-wifi.conf 644 root:root <<EOF; then
-# $MARK (#206)
+# $MARK (#206, #212)
+[main]
+# 0 = keep auto-connecting forever instead of giving up after 4 tries. It only works here:
+# NetworkManager ignores connection.autoconnect-retries in a [connection] section.
+autoconnect-retries-default=0
+
 [connection-jarvis-wifi]
 match-device=type:wifi
 # 2 = disable Wi-Fi power saving: a dozing chip misses reconnects.
 wifi.powersave=2
-# 0 = retry forever instead of giving up after 4 attempts.
-connection.autoconnect-retries=0
+# 0 = retry the handshake forever. After 3 failures (e.g. a mesh kicking the Pi mid-
+# handshake) NetworkManager asks for a new password; nobody can answer, so the connection
+# fails with no-secrets and stays down.
+connection.auth-retries=0
 EOF
   reload_if_active NetworkManager reload
+fi
+# Raspberry Pi OS's Wi-Fi driver workarounds (/usr/lib/modprobe.d/rpi-brcmfmac.conf): no
+# firmware roaming, no firmware WPA3/auth offload; both break on mesh networks. A custom
+# file in /etc/modprobe.d can silently drop them, so report it (the fix depends on why).
+if command -v modprobe >/dev/null; then
+  brcm=" $(modprobe -c 2>/dev/null | sed -n 's/^options brcmfmac //p' | tr '\n' ' ') "
+  for opt in roamoff=1 feature_disable=0x282000; do
+    [[ "$brcm" == *" $opt "* ]] && continue
+    ((check)) && drift=$((drift + 1))
+    warn "Wi-Fi driver option $opt is not set (see: modprobe -c | grep brcmfmac)"
+  done
 fi
 # Also now, without re-joining the network: NetworkManager applies the file on the next
 # connect. Never in --check (power saving is runtime state, not drift).
