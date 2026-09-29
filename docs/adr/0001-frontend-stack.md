@@ -1,5 +1,5 @@
 # 0001. Frontend stack
-Status: Accepted · Date: 2026-09-23
+Status: Accepted. Date: 2026-09-23.
 
 ## Context
 The display is a native Tauri app on the Pi 5. We asked two questions: should the webview

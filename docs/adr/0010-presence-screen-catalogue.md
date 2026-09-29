@@ -1,5 +1,5 @@
 # 0010. Presence screens: a catalogue, the face by default
-Status: Accepted · Date: 2026-09-27
+Status: Accepted. Date: 2026-09-27.
 
 ## Context
 Spike #133 asked what the 4–5" screen shows by default. #138 prototyped three screens (face,

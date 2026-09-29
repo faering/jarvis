@@ -1,5 +1,5 @@
 # 0006. Release artifacts and gated per-component Pi deploy
-Status: Accepted · Date: 2026-09-24
+Status: Accepted. Date: 2026-09-24.
 
 ## Context
 Each component releases on its own (ADR 0004). A release has to turn into artifacts

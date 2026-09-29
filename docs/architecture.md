@@ -8,25 +8,25 @@ flowchart TB
   subgraph HW["🧩 Raspberry Pi 5 — hardware"]
     direction LR
     CAM["📷 AI Camera<br/>IMX500"]
-    HAT["⚡ AI HAT+ 2<br/>Hailo NPU · 40 TOPS"]
+    HAT["⚡ AI HAT+ 2<br/>Hailo NPU, 40 TOPS"]
     MIC["🎙️ USB mic / speaker"]
     SCR["🖥️ Touchscreen"]
   end
-  subgraph DOCKER["🐳 Docker stack · jarvis-net"]
-    AGENT["🧠 Agent / API · Python<br/>CPU orchestrator + tools"]
+  subgraph DOCKER["🐳 Docker stack (jarvis-net)"]
+    AGENT["🧠 Agent / API (Python)<br/>CPU orchestrator + tools"]
   end
-  subgraph APP["🖼️ Tauri app · native, on-device"]
-    UI["Frontend · TS/React"]
-    RUST["Tauri backend · Rust"]
+  subgraph APP["🖼️ Tauri app (native, on-device)"]
+    UI["Frontend (TS/React)"]
+    RUST["Tauri backend (Rust)"]
   end
   CLOUD["☁️ Cloud / larger models"]
 
   CAM -->|frames| HAT
-  HAT <-->|inference · features| AGENT
+  HAT <-->|inference, features| AGENT
   MIC -->|audio| AGENT
   AGENT <-->|WebSocket| UI
   RUST --- UI --- SCR
-  AGENT -.->|async · heavy tasks| CLOUD
+  AGENT -.->|async, heavy tasks| CLOUD
 
   classDef hw fill:#CCFBF1,stroke:#0D9488,color:#134E4A;
   classDef acc fill:#FFE4E6,stroke:#E11D48,color:#881337;

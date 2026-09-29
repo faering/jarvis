@@ -1,5 +1,5 @@
 # 0011. Plain-text logs on the Pi, OpenTelemetry-shaped, one set of levels
-Status: Accepted · Date: 2026-09-27
+Status: Accepted. Date: 2026-09-27.
 
 ## Context
 Logging so far is ad hoc (Python defaults, Docker's log driver). Before real logging lands

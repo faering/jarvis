@@ -75,6 +75,9 @@ the day, take notes, manage the calendar, and act as a sparring partner for hobb
   commitizen lints messages only — it does **not** bump versions.
 - **Releases**: automated by **release-please** — see *Releases & commit conventions*.
 - Run CI locally with **`act`** (`scripts/ci-local.sh`) before pushing.
+- **Write for people:** never use the middle dot (U+00B7) as a separator, in docs, UI,
+  generated text or anywhere else; use commas, "and", brackets or a list. The
+  `no-middle-dot` pre-commit hook enforces it.
 - **Docs: short, concise, no clutter.** Update the doc a change affects in the same PR, and
   prefer extending an existing doc over adding a new one. Record architecture decisions,
   with the alternatives considered, as ADRs in [`docs/adr/`](docs/adr/README.md).
@@ -144,7 +147,7 @@ contain `+`**, the same build has two forms — sanitized only where required:
   - release (clean tag): `1.2.3`
   - dev: `1.2.3+<ahead>.g<sha>` (dirty → `1.2.3+<ahead>.g<sha>.dirty`)
 - **Docker image tag** (no `+`) — git-describe form:
-  - release: `1.2.3` · dev: `1.2.3-<ahead>-g<sha>` (dirty → `1.2.3-<ahead>-g<sha>-dirty`)
+  - release: `1.2.3`; dev: `1.2.3-<ahead>-g<sha>` (dirty → `1.2.3-<ahead>-g<sha>-dirty`)
 - **`org.opencontainers.image.revision`** = the full commit sha.
 
 Compute once via `scripts/version.sh <component>` (emits both `CANONICAL` and `DOCKER_TAG`);

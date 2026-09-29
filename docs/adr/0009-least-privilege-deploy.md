@@ -1,5 +1,5 @@
 # 0009. Least-privilege Pi deploys
-Status: Accepted · Date: 2026-09-27
+Status: Accepted. Date: 2026-09-27.
 
 ## Context
 ADR 0006 deploys over SSH. The deploy user ran `docker compose` itself, so it had to be in

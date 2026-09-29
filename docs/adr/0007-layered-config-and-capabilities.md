@@ -1,5 +1,5 @@
 # 0007. Layered config with profiles, probed hardware and capability manifests
-Status: Accepted · Date: 2026-09-24
+Status: Accepted. Date: 2026-09-24.
 
 ## Context
 One agent image must run on the home Pi (Hailo + camera), the work Pi (voice only) and a
