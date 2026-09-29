@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/faering/jarvis/compare/app-v0.1.2...app-v0.2.0) (2026-09-29)
+
+
+### Features
+
+* **app:** Jarvis minimizes its window on the agent's command or Ctrl+M ([091f1a6](https://github.com/faering/jarvis/commit/091f1a619996a67676adf1554cf853cdb34e1523)), closes [#222](https://github.com/faering/jarvis/issues/222)
+
 ## [0.1.2](https://github.com/faering/jarvis/compare/app-v0.1.1...app-v0.1.2) (2026-09-29)
 
 
