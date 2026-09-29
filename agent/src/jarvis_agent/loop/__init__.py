@@ -7,7 +7,14 @@ stream from the local LLM into the ``SpeechQueue``; heavy tasks are offloaded an
 when they finish. UI-facing events (``LoopEvent``) go to subscribers.
 """
 
-from jarvis_agent.loop.events import LoopEvent, LoopState, ReplyText, StateChanged, Transcript
+from jarvis_agent.loop.events import (
+    Command,
+    LoopEvent,
+    LoopState,
+    ReplyText,
+    StateChanged,
+    Transcript,
+)
 from jarvis_agent.loop.source import (
     AudioSource,
     Cancel,
@@ -21,6 +28,7 @@ from jarvis_agent.loop.voice import LoopBusy, VoiceLoop
 __all__ = [
     "AudioSource",
     "Cancel",
+    "Command",
     "LoopBusy",
     "LoopEvent",
     "LoopState",

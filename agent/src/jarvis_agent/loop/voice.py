@@ -35,9 +35,17 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
+from jarvis_agent import commands
 from jarvis_agent.backends import STT, BackendError, ChatMessage
 from jarvis_agent.logs import TRACE, kv, new_trace_id, reset_trace_id, set_trace_id
-from jarvis_agent.loop.events import LoopEvent, LoopState, ReplyText, StateChanged, Transcript
+from jarvis_agent.loop.events import (
+    Command,
+    LoopEvent,
+    LoopState,
+    ReplyText,
+    StateChanged,
+    Transcript,
+)
 from jarvis_agent.loop.source import AudioSource, Cancel, SourceEvent, Utterance, Wake
 from jarvis_agent.routing import Reply, Route, Router, Task
 from jarvis_agent.speech import SpeechQueue
@@ -347,18 +355,10 @@ class VoiceLoop:
                 self._post(generation, StateChanged(LoopState.IDLE))  # nothing was said
             else:
                 self._post(generation, Transcript(text))
-                await self._memory.append("user", text)
-                # Route on the new utterance alone: a long conversation history must not
-                # push every later turn onto the heavy route.
-                user: list[ChatMessage] = [{"role": "user", "content": text}]
-                route = self._router.route(Task(user, deep=utterance.deep))
-                log.debug("routed", extra=kv(route=route.value, deep=utterance.deep))
-                if route is Route.HEAVY:
-                    messages = await self._context(budget=None)
-                    self._inbox.put_nowait(_Offload(generation, messages))
+                if (command := commands.match(text)) is not None:
+                    speech_turn = self._command(generation, command)
                 else:
-                    budget = self._router.policy.max_hot_chars
-                    speech_turn = await self._stream(generation, await self._context(budget))
+                    speech_turn = await self._answer(generation, text, deep=utterance.deep)
         except asyncio.CancelledError:
             raise
         except Exception:  # STT, store or no local LLM: say so rather than go silent
@@ -367,6 +367,33 @@ class VoiceLoop:
             self._post(generation, StateChanged(LoopState.SPEAKING))
             self._post(generation, ReplyText(text=SORRY, done=True, spoken=spoken))
         self._inbox.put_nowait(_TurnDone(generation, speech_turn))
+
+    async def _answer(self, generation: int, text: str, *, deep: bool) -> int | None:
+        """Remember the utterance, route it, and answer it (hot) or offload it (heavy)."""
+        await self._memory.append("user", text)
+        # Route on the new utterance alone: a long conversation history must not push every
+        # later turn onto the heavy route.
+        user: list[ChatMessage] = [{"role": "user", "content": text}]
+        route = self._router.route(Task(user, deep=deep))
+        log.debug("routed", extra=kv(route=route.value, deep=deep))
+        if route is Route.HEAVY:
+            messages = await self._context(budget=None)
+            self._inbox.put_nowait(_Offload(generation, messages))
+            return None
+        budget = self._router.policy.max_hot_chars
+        return await self._stream(generation, await self._context(budget))
+
+    def _command(self, generation: int, command: commands.AppCommand) -> int:
+        """A fixed phrase asked the app to do something: confirm it, then send the command.
+        INITIAL APPROACH (ADR 0013, #223): the model isn't asked, and the exchange isn't
+        remembered, since it's control rather than conversation."""
+        log.info("app command", extra=kv(command=command.value))
+        reply = commands.REPLIES[command]
+        speech_turn, spoken = self._say_turn(reply)
+        self._post(generation, StateChanged(LoopState.SPEAKING))
+        self._post(generation, ReplyText(text=reply, done=True, spoken=spoken))
+        self._post(generation, Command(command.value))
+        return speech_turn
 
     async def _transcribe(self, utterance: Utterance) -> str:
         if utterance.text is not None:

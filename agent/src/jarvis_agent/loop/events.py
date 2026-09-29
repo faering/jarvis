@@ -1,4 +1,5 @@
-"""What the voice loop reports to the UI: state changes, transcripts and reply text.
+"""What the voice loop reports to the UI: state changes, transcripts, reply text and app
+commands.
 
 Each event carries the ``trace_id`` of the turn it belongs to (docs/logging.md), if any.
 It is left out of equality, so tests compare events by content.
@@ -51,4 +52,13 @@ class ReplyText:
     trace_id: str | None = field(default=None, compare=False, kw_only=True)
 
 
-type LoopEvent = StateChanged | Transcript | ReplyText
+@dataclass(frozen=True)
+class Command:
+    """Ask the app to run ``name`` (ADR 0013), e.g. ``window.minimize``. For now only after
+    a fixed phrase (``jarvis_agent.commands``, an initial approach to revisit, #223)."""
+
+    name: str
+    trace_id: str | None = field(default=None, compare=False, kw_only=True)
+
+
+type LoopEvent = StateChanged | Transcript | ReplyText | Command

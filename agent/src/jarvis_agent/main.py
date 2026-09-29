@@ -9,7 +9,15 @@ from pydantic import ValidationError
 
 from jarvis_agent import protocol
 from jarvis_agent.logs import kv, new_trace_id, traced
-from jarvis_agent.loop import LoopBusy, LoopEvent, ReplyText, StateChanged, Transcript, VoiceLoop
+from jarvis_agent.loop import (
+    Command,
+    LoopBusy,
+    LoopEvent,
+    ReplyText,
+    StateChanged,
+    Transcript,
+    VoiceLoop,
+)
 from jarvis_agent.runtime import Runtime, lifespan
 from jarvis_agent.version import BuildInfo, build_info
 
@@ -122,6 +130,8 @@ def _event(event: LoopEvent) -> protocol.Envelope:
                 spoken=spoken,
                 trace_id=event.trace_id,
             )
+        case Command(name):
+            return protocol.command(name, trace_id=event.trace_id)
 
 
 def _post(outbox: asyncio.Queue[protocol.Envelope], envelope: protocol.Envelope) -> None:

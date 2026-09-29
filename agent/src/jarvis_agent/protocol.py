@@ -14,6 +14,8 @@ Message types (payloads):
   best-effort). ``spoken: false`` only when speech was refused, dropped or had already
   failed when the reply completed; absent means it was accepted for speech (playback runs
   on after ``done``, so a later failure is only logged).
+  ``command`` {name}: ask the app to run a command from the schema's closed list
+  (ADR 0013); for now only after a fixed phrase (``jarvis_agent.commands``, #223).
 - client -> agent: ``ping``; ``say`` {text, deep?} (a text utterance for the voice loop).
 """
 
@@ -121,3 +123,8 @@ def reply(
     if text is not None:
         payload["text"] = text
     return Envelope(v=PROTOCOL_VERSION, type="reply", payload=_traced(payload, trace_id))
+
+
+def command(name: str, *, trace_id: str | None = None) -> Envelope:
+    """Ask the app to run ``name`` (the schema's ``$defs.command`` list; ADR 0013)."""
+    return Envelope(v=PROTOCOL_VERSION, type="command", payload=_traced({"name": name}, trace_id))
