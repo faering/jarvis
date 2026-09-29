@@ -22,7 +22,7 @@ Template:
 
 ```markdown
 # NNNN. Title
-Status: Proposed | Accepted | Superseded by NNNN · Date: YYYY-MM-DD
+Status: Proposed, Accepted or Superseded by NNNN. Date: YYYY-MM-DD.
 
 ## Context
 ## Decision

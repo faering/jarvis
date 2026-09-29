@@ -296,7 +296,7 @@ def render_notes(
     man: Manifest, ms: dict, issues: list[dict], previous: Manifest | None = None
 ) -> str:
     r = repo()
-    lines = [f"**{man.title}** · {MILESTONE_TITLE.match(man.milestone).group(2)}", ""]
+    lines = [f"**{man.title}**: {MILESTONE_TITLE.match(man.milestone).group(2)}", ""]
     if outcome(ms.get("description")):
         lines += [defuse(outcome(ms.get("description"))), ""]
     lines += ["| Component | Version | Changelog |", "|---|---|---|"]
@@ -343,7 +343,7 @@ def roadmap_block(mss: list[dict], manifests: list[Manifest]) -> str:
         n, goal = int(m.group(1)), m.group(2)
         man = by_number.get(n)
         codename = man.codename if man else milestone_codename(ms.get("description"))
-        name = f"Jarvis {n}" + (f" · {codename}" if codename else "")
+        name = f"Jarvis {n} - {codename or 'TBD'}"  # codename not chosen yet: TBD
         if man:
             status = f"released as jarvis-v{man.version}"
         elif ms["state"] == "closed":
@@ -365,8 +365,8 @@ def roadmap_block(mss: list[dict], manifests: list[Manifest]) -> str:
             *[row for _, row in sorted(rows)],
             "```",
             "",
-            f"[Milestones](https://github.com/{r}/milestones?state=all) · "
-            f"[Jarvis releases](https://github.com/{r}/releases?q=jarvis-v&expanded=true)",
+            f"See the [milestones](https://github.com/{r}/milestones?state=all) and the "
+            f"[Jarvis releases](https://github.com/{r}/releases?q=jarvis-v&expanded=true).",
             END,
         ]
     )

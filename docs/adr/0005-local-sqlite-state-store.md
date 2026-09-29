@@ -1,5 +1,5 @@
 # 0005. Local SQLite state store with local-first providers
-Status: Accepted · Date: 2026-09-24
+Status: Accepted. Date: 2026-09-24.
 
 ## Context
 Jarvis must work standalone (work Pi, laptop) yet use Faelab's data at home (#75). Its own

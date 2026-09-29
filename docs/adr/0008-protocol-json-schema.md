@@ -1,5 +1,5 @@
 # 0008. One JSON Schema for the agent↔app WebSocket contract
-Status: Accepted · Date: 2026-09-24
+Status: Accepted. Date: 2026-09-24.
 
 ## Context
 The agent (Python) and the app (TS) release independently (ADR 0004), so their WebSocket

@@ -1,5 +1,5 @@
 # 0012. A model catalogue, with the model per role chosen per device
-Status: Accepted · Date: 2026-09-28
+Status: Accepted. Date: 2026-09-28.
 
 ## Context
 Jarvis uses several models (LLM, heavy LLM, STT, TTS, and later a VLM, wake word,

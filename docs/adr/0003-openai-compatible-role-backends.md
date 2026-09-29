@@ -1,5 +1,5 @@
 # 0003. OpenAI-compatible role backends
-Status: Accepted · Date: 2026-09-23
+Status: Accepted. Date: 2026-09-23.
 
 ## Context
 The agent needs LLM, STT and TTS (and later Vision). The same agent code has to run in the
