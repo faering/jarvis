@@ -170,7 +170,7 @@ class NotesTest(unittest.TestCase):
 
     def test_header_components_and_changelogs(self):
         notes = jr.render_notes(self.man, self.ms, self.issues)
-        self.assertTrue(notes.startswith("**Jarvis 1 — Captain America** · Lives on the Pi"))
+        self.assertTrue(notes.startswith("**Jarvis 1 — Captain America**: Lives on the Pi"))
         self.assertIn("Jarvis runs on the Pi from a CI deploy.", notes)
         self.assertNotIn("Codename:", notes)
         self.assertIn(
@@ -217,9 +217,9 @@ class ReadmeTest(unittest.TestCase):
         block = jr.roadmap_block(mss, [jr.parse_manifest(MANIFEST)])
         self.assertTrue(block.startswith(jr.START) and block.endswith(jr.END))
         self.assertIn(
-            "Jarvis 1 · Captain America : Lives on the Pi : released as jarvis-v1.0", block
+            "Jarvis 1 - Captain America : Lives on the Pi : released as jarvis-v1.0", block
         )
-        self.assertIn("Jarvis 2 : Ears and mouth : due 2026-11-15", block)
+        self.assertIn("Jarvis 2 - TBD : Ears and mouth : due 2026-11-15", block)
         self.assertNotIn("Someday", block)
 
     def test_replace_block_keeps_the_rest(self):

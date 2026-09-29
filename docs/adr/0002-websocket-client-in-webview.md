@@ -1,5 +1,5 @@
 # 0002. Agent WebSocket client lives in the webview (TS)
-Status: Accepted · Date: 2026-09-23
+Status: Accepted. Date: 2026-09-23.
 
 ## Context
 The Tauri app needs a connection to the agent's WebSocket (v0 envelope, #30). It could

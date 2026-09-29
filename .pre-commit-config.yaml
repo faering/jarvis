@@ -50,6 +50,12 @@ repos:
   # ---- Project-local hooks (activate when their files exist) --------------
   - repo: local
     hooks:
+      # AGENTS.md "Write for people": no middle dot (U+00B7) as a separator, anywhere.
+      - id: no-middle-dot
+        name: no middle dot (write commas, "and", brackets or a list)
+        language: pygrep
+        entry: '\xc2\xb7' # U+00B7 in UTF-8 (pygrep matches bytes)
+        types: [text]
       - id: eslint
         name: eslint + tsc (JS workspace)
         language: system
