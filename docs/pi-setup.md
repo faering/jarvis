@@ -37,8 +37,8 @@ and root-owned deploy scripts, `/opt/jarvis/` and sudoers; hardens SSH; turns on
 firewall; sets up the journal, shell history and updates; and creates the log folder
 `/var/log/jarvis` (group `jarvis-log`, GID 2750, which your login joins), `jarvis-logs` and
 its hourly prune timer ([logging](logging.md)); and `gh` with a daily-refreshed Sigstore
-trusted root, so every release is verified offline before it's installed (#121). Details are
-in the script.
+trusted root, so every release is verified offline before it's installed (#121); and keeps
+the Wi-Fi up: power saving off, reconnecting forever (#206). Details are in the script.
 - Exit **3** = steps it deferred to keep you from being locked out (no SSH key yet,
   Tailscale not up). It prints why; fix that and re-run.
 - **Re-run any time** (e.g. after `git pull`); `--check` reports drift and changes nothing.
