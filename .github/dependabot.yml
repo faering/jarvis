@@ -8,6 +8,10 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+    ignore:
+      # Its tag IS the Rust version it installs (e.g. @1.98.1), and Rust is bumped
+      # deliberately (AGENTS.md); Dependabot proposed a nonexistent 1.120.0 (#170).
+      - dependency-name: dtolnay/rust-toolchain
   - package-ecosystem: devcontainers
     directory: /
     schedule:
