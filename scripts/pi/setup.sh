@@ -230,8 +230,13 @@ EOF
 
 # ---- 2. logs: journald on disk + Docker's journald driver (before Docker starts) ------------
 section "journald + docker logging"
-if ensure_file /etc/systemd/journald.conf.d/10-jarvis.conf 644 root:root <<EOF; then
-# $MARK (#132)
+# 99-: drop-ins apply in file-name order across /etc and /usr/lib, and Raspberry Pi OS's
+# /usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf sets Storage=volatile (#212).
+if [[ -e "$(p /etc/systemd/journald.conf.d/10-jarvis.conf)" ]]; then
+  act "remove journald 10-jarvis.conf (now 99-jarvis.conf)" rm -f "$(p /etc/systemd/journald.conf.d/10-jarvis.conf)"
+fi
+if ensure_file /etc/systemd/journald.conf.d/99-jarvis.conf 644 root:root <<EOF; then
+# $MARK (#132, #212)
 # Keep the journal across reboots; cap it for the SD card. Read: journalctl -b -1, -u docker
 [Journal]
 Storage=persistent
@@ -240,6 +245,13 @@ SystemKeepFree=1G
 MaxRetentionSec=1month
 EOF
   reload_if_active systemd-journald restart
+fi
+if ((!fake)) && command -v systemd-analyze >/dev/null; then
+  storage="$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null | sed -n 's/^Storage=//p' | tail -n1)"
+  if [[ -n "$storage" && "$storage" != persistent ]]; then
+    ((check)) && drift=$((drift + 1))
+    warn "journald Storage=$storage wins over ours (see: systemd-analyze cat-config systemd/journald.conf)"
+  fi
 fi
 # Merge into daemon.json: set only log-driver (and drop json-file-only log-opts, which
 # journald rejects); every other key is kept.
@@ -465,24 +477,28 @@ if [[ "$(unit_state jarvis-logs-prune.timer)" != enabled ]]; then
   act "enable jarvis-logs-prune.timer (hourly)" systemctl enable --now jarvis-logs-prune.timer
 fi
 
-# ---- 4d. network watchdog (#207) ----------------------------------------------------------
-# Every 2 minutes: if the Wi-Fi has lost the router, reconnect it, then restart
-# NetworkManager if that doesn't help (scripts/pi/jarvis-netwatch).
+# ---- 4d. network watchdog (#207, #212) -----------------------------------------------------
+# About once a minute: if the Wi-Fi has lost the router, reconnect, restart NetworkManager,
+# reload the driver, then reboot (scripts/pi/jarvis-netwatch).
 section "network watchdog"
 ensure_file /usr/local/lib/jarvis/netwatch 755 root:root <"$repo/scripts/pi/jarvis-netwatch" || :
 units=0
 if ensure_file /etc/systemd/system/jarvis-netwatch.service 644 root:root <<EOF; then units=1; fi
 # $MARK (#207)
 [Unit]
-Description=Reconnect the Wi-Fi if the router stops answering
+Description=Get the Wi-Fi back if the router stops answering
 Documentation=https://github.com/faering/jarvis/blob/main/docs/pi-setup.md
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/lib/jarvis/netwatch
-# Keeps the failed-check counter between runs (a oneshot's runtime dir is removed on exit).
+# A run never blocks the next one: each step has a 45 s deadline, and this is the backstop.
+TimeoutStartSec=150s
+# The failed-check counter survives between runs (a oneshot's runtime dir is removed on
+# exit); the last reboot's time survives reboots.
 RuntimeDirectory=jarvis-netwatch
 RuntimeDirectoryPreserve=yes
+StateDirectory=jarvis-netwatch
 ProtectSystem=strict
 ReadWritePaths=$LOG_DIR
 PrivateTmp=yes
@@ -492,19 +508,19 @@ EOF
 if ensure_file /etc/systemd/system/jarvis-netwatch.timer 644 root:root <<EOF; then units=1; fi
 # $MARK (#207)
 [Unit]
-Description=Check the network every 2 minutes
+Description=Check the network 45 s after each check ends
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=2min
-AccuracySec=10s
+OnBootSec=3min
+OnUnitInactiveSec=45s
+AccuracySec=5s
 
 [Install]
 WantedBy=timers.target
 EOF
 ((check || !units)) || systemctl daemon-reload
 if [[ "$(unit_state jarvis-netwatch.timer)" != enabled ]]; then
-  act "enable jarvis-netwatch.timer (every 2 minutes)" systemctl enable --now jarvis-netwatch.timer
+  act "enable jarvis-netwatch.timer (about once a minute)" systemctl enable --now jarvis-netwatch.timer
 fi
 
 # ---- 5. ssh hardening ----------------------------------------------------------------------
