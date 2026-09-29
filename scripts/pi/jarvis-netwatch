@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Network watchdog (#207): if the Pi's Wi-Fi loses the router, get it back without anyone
+# rebooting the Pi. Setup installs it root-owned as /usr/local/lib/jarvis/netwatch and runs
+# it every 2 minutes (jarvis-netwatch.timer).
+#
+# Healthy = the default route goes over Wi-Fi and its gateway answers a ping (no internet
+# needed). Default route over another device (e.g. Ethernet), or no Wi-Fi device: nothing
+# to do. After 2 failed checks in a row it reconnects the Wi-Fi; if that doesn't help, it
+# restarts NetworkManager on every 4th failed check. Logs go to jarvis-system-<date>.log.
+set -uo pipefail
+state_dir="${JARVIS_NETWATCH_STATE:-/run/jarvis-netwatch}"
+log_lib="${JARVIS_LOG_LIB:-/usr/local/lib/jarvis/log.sh}"
+if [[ $EUID -eq 0 ]]; then # test hooks are never honoured as root
+  state_dir=/run/jarvis-netwatch log_lib=/usr/local/lib/jarvis/log.sh
+  PATH=/usr/sbin:/usr/bin:/sbin:/bin
+fi
+export JARVIS_LOG_COMPONENT=system
+# shellcheck source=../lib/log.sh
+if [[ -f "$log_lib" ]]; then . "$log_lib"; else log() { echo "[$1] $2: ${*:3}" >&2; }; fi
+
+fails_file="$state_dir/fails"
+mkdir -p "$state_dir"
+fails="$(cat "$fails_file" 2>/dev/null || echo 0)"
+[[ "$fails" =~ ^[0-9]+$ ]] || fails=0
+
+wifi="$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2 == "wifi" {print $1; exit}')"
+[[ -n "$wifi" ]] || exit 0 # no Wi-Fi on this device
+
+healthy() {
+  local route gw
+  route="$(ip -4 route show default 2>/dev/null | head -n1)"
+  if [[ -n "$route" && "$route" != *" dev $wifi"* ]]; then
+    return 0 # the default route is on another device (e.g. Ethernet): not our business
+  fi
+  gw="$(awk '{for (i = 1; i < NF; i++) if ($i == "via") print $(i + 1)}' <<<"$route")"
+  [[ -n "$gw" ]] && ping -c 2 -W 2 -q "$gw" >/dev/null 2>&1
+}
+
+if healthy; then
+  ((fails == 0)) || log INFO netwatch "network back" device="$wifi" after_failed_checks="$fails"
+  echo 0 >"$fails_file"
+  exit 0
+fi
+
+fails=$((fails + 1))
+echo "$fails" >"$fails_file"
+log WARN netwatch "router unreachable" device="$wifi" failed_checks="$fails"
+((fails >= 2)) || exit 0 # one blip: wait for the next check
+
+if ((fails % 4 == 0)); then
+  log WARN netwatch "restarting NetworkManager" device="$wifi" failed_checks="$fails"
+  systemctl restart NetworkManager ||
+    log ERROR netwatch "NetworkManager restart failed" failed_checks="$fails"
+else
+  log INFO netwatch "reconnecting the Wi-Fi" device="$wifi" failed_checks="$fails"
+  nmcli device connect "$wifi" >/dev/null 2>&1 ||
+    log WARN netwatch "reconnect failed" device="$wifi" failed_checks="$fails"
+fi
+exit 0

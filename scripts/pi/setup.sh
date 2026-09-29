@@ -465,6 +465,48 @@ if [[ "$(unit_state jarvis-logs-prune.timer)" != enabled ]]; then
   act "enable jarvis-logs-prune.timer (hourly)" systemctl enable --now jarvis-logs-prune.timer
 fi
 
+# ---- 4d. network watchdog (#207) ----------------------------------------------------------
+# Every 2 minutes: if the Wi-Fi has lost the router, reconnect it, then restart
+# NetworkManager if that doesn't help (scripts/pi/jarvis-netwatch).
+section "network watchdog"
+ensure_file /usr/local/lib/jarvis/netwatch 755 root:root <"$repo/scripts/pi/jarvis-netwatch" || :
+units=0
+if ensure_file /etc/systemd/system/jarvis-netwatch.service 644 root:root <<EOF; then units=1; fi
+# $MARK (#207)
+[Unit]
+Description=Reconnect the Wi-Fi if the router stops answering
+Documentation=https://github.com/faering/jarvis/blob/main/docs/pi-setup.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/jarvis/netwatch
+# Keeps the failed-check counter between runs (a oneshot's runtime dir is removed on exit).
+RuntimeDirectory=jarvis-netwatch
+RuntimeDirectoryPreserve=yes
+ProtectSystem=strict
+ReadWritePaths=$LOG_DIR
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes
+EOF
+if ensure_file /etc/systemd/system/jarvis-netwatch.timer 644 root:root <<EOF; then units=1; fi
+# $MARK (#207)
+[Unit]
+Description=Check the network every 2 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
+EOF
+((check || !units)) || systemctl daemon-reload
+if [[ "$(unit_state jarvis-netwatch.timer)" != enabled ]]; then
+  act "enable jarvis-netwatch.timer (every 2 minutes)" systemctl enable --now jarvis-netwatch.timer
+fi
+
 # ---- 5. ssh hardening ----------------------------------------------------------------------
 section "ssh"
 ensure_enabled ssh.service

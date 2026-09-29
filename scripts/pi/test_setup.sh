@@ -122,7 +122,7 @@ new_pi() { # new_pi <name>: sets R, S, REPO
   R="$d/root" S="$d/stub" REPO="$d/repo"
   mkdir -p "$R/etc" "$R/home/pi/.ssh" "$R/root" "$S/units" "$REPO/scripts/pi" "$REPO/scripts/deploy" "$REPO/deploy/pi" \
     "$REPO/scripts/lib" "$REPO/scripts/logs"
-  cp "$here/setup.sh" "$REPO/scripts/pi/"
+  cp "$here/setup.sh" "$here/jarvis-netwatch" "$REPO/scripts/pi/"
   cp "$src/scripts/lib/log.sh" "$REPO/scripts/lib/"
   cp "$src/scripts/lib/verify.sh" "$src/scripts/lib/refresh-trusted-root" "$REPO/scripts/lib/"
   cp "$src/scripts/logs/jarvis-logs" "$REPO/scripts/logs/"
@@ -267,6 +267,13 @@ check "prune timer hourly" has /etc/systemd/system/jarvis-logs-prune.timer "OnCa
 check "prune timer enabled" test "$(cat "$S/units/jarvis-logs-prune.timer")" == enabled
 check "systemd reloaded before enabling the timer" bash -c \
   "grep -n 'systemctl' '$S/calls' | grep -A99 daemon-reload | grep -q 'enable --now jarvis-logs-prune.timer'"
+f=/etc/systemd/system/jarvis-netwatch.service
+check "netwatch is the repo copy" cmp -s "$src/scripts/pi/jarvis-netwatch" "$R/usr/local/lib/jarvis/netwatch"
+check "netwatch 755" mode /usr/local/lib/jarvis/netwatch 755
+check "netwatch service is sandboxed" has $f "ProtectSystem=strict"
+check "netwatch keeps its fail counter between runs" has $f "RuntimeDirectoryPreserve=yes"
+check "netwatch timer every 2 minutes" has /etc/systemd/system/jarvis-netwatch.timer "OnUnitActiveSec=2min"
+check "netwatch timer enabled" test "$(cat "$S/units/jarvis-netwatch.timer")" == enabled
 check "avahi disabled" test "$(cat "$S/units/avahi-daemon.service")" == disabled
 check "bluetooth kept" test "$(cat "$S/units/bluetooth.service")" == enabled
 check "docker enabled" test "$(cat "$S/units/docker.service")" == enabled
