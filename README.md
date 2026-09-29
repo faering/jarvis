@@ -60,13 +60,25 @@ See the [milestones](https://github.com/faering/jarvis/milestones?state=all) and
 In the order GitHub lists it above:
 
 ```
-.claude/          # how the AI agents that help build Jarvis work: skills and rules
-.devcontainer/    # the development environment, everything in one container
-.github/          # CI and releases: tests every PR, builds releases, deploys to the Pi
-agent/            # Jarvis's brain: holds the conversation, picks a model per task (Python)
-deploy/           # what runs on a device: the Pi's stack (agent + local model server)
-docs/             # how it works and how to set it up; decisions in docs/adr
-frontend/         # Jarvis's face: the app on its screen (React UI in a small Rust shell)
-packages/         # shared TypeScript, like the agent-app message format
-scripts/          # tools for devices and releases: Pi setup, deploy, logs, releases
+.claude/                  skills, rules, agent config
+.devcontainer/            dev environment (Python, Node, Rust, Tauri)
+.github/                  CI workflows, releases, deploy to the Pi
+agent/                    Python: Jarvis core, the deployable agent
+  src/jarvis_agent/
+    loop/                 the voice loop: turns, state
+    routing/              picks a model per request (local, heavy)
+    models/               model catalogue + playground (list, pull, chat, bench)
+    backends/             model-serving clients (OpenAI-compatible, mock)
+    capabilities/         manifests + providers (local, faelab)
+    config/               layered config; profiles/ home, work, dev (TOML)
+    hardware/             device probes; drivers (Pi-only)
+    speech/               speech output queue
+    store/                local persistent state (SQLite)
+    logs/                 logging (docs/logging.md)
+deploy/pi/                the Pi's compose stack (agent + Ollama)
+docs/                     architecture, setup, deploy, models, logging; adr/, experiments/
+frontend/                 Tauri app: TS/React UI + src-tauri/ (Rust)
+  src/                    agent client, presence screens, conversation, logging
+packages/                 shared TS: protocol (the WebSocket schema), config
+scripts/                  pi/ setup, deploy/, release/, logs/ (jarvis-logs), version.sh
 ```
