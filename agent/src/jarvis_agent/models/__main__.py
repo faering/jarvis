@@ -242,7 +242,7 @@ async def cmd_chat(args, config, factory: ClientFactory, stdin: TextIO, out: Tex
                 stats.append(f"{'' if reply.exact else '~'}{reply.tokens} tokens")
             if reply.load_s and reply.load_s > 0.5:
                 stats.append(f"model load {fmt_s(reply.load_s)}s")
-            print(f"\n  [{' · '.join(stats)}]", file=out)
+            print(f"\n  [{', '.join(stats)}]", file=out)
 
 
 # -- bench ----------------------------------------------------------------------------------
