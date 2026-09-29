@@ -199,7 +199,7 @@ log "operator=$operator codename=$codename arch=$arch repo=$repo"
 
 # ---- 1. packages ---------------------------------------------------------------------------
 section "packages"
-apt_install ca-certificates curl gpg jq python3 nftables unattended-upgrades
+apt_install ca-certificates curl gpg jq python3 nftables unattended-upgrades vim
 # Docker and Tailscale from their official apt repos (arm64 Debian builds), keys pinned above.
 ensure_key /etc/apt/keyrings/docker.asc https://download.docker.com/linux/debian/gpg "$DOCKER_KEY_FPR"
 ensure_key /usr/share/keyrings/tailscale-archive-keyring.gpg \
@@ -676,6 +676,23 @@ for h in "$op_home" "${root_home:-/root}"; do
   fi
   # shellcheck disable=SC2016 # $1/$2 expand in the child bash
   grep -qxF "$hook" "$rc" || act "$h/.bashrc: source jarvis-history.sh" bash -c 'printf "%s\n" "$1" >>"$2"' _ "$hook" "$rc"
+done
+
+# ---- 8b. shell like the devcontainer (#214) --------------------------------------------------
+# Prompt with the git branch, `ll`, and full vim as the editor: Raspberry Pi OS has only
+# vim-tiny in vi-compatible mode (no -- INSERT --, arrow keys type letters).
+section "shell"
+ensure_file /etc/profile.d/jarvis-shell.sh 644 root:root <"$repo/scripts/pi/jarvis-shell.sh" || :
+hook='if [ -r /etc/profile.d/jarvis-shell.sh ]; then . /etc/profile.d/jarvis-shell.sh; fi # jarvis'
+for h in "$op_home" "${root_home:-/root}"; do
+  rc="$(p "$h/.bashrc")"
+  [[ -f "$rc" ]] || continue
+  # shellcheck disable=SC2016 # $1/$2 expand in the child bash
+  grep -qxF "$hook" "$rc" || act "$h/.bashrc: source jarvis-shell.sh" bash -c 'printf "%s\n" "$1" >>"$2"' _ "$hook" "$rc"
+done
+for alt in editor vi vim; do # nano outranks vim as `editor`; set all three explicitly
+  [[ "$(readlink "$(p /etc/alternatives/$alt)" 2>/dev/null)" == /usr/bin/vim.basic ]] ||
+    act "$alt -> vim" update-alternatives --quiet --set "$alt" /usr/bin/vim.basic
 done
 
 # ---- 9. unused services --------------------------------------------------------------------

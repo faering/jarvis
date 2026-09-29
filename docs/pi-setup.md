@@ -107,5 +107,7 @@ settings), or on the Pi `sudo docker login ghcr.io` with a `read:packages` PAT. 
 - **Wi-Fi watchdog:** every 2 minutes it pings the router; after 2 misses it reconnects the
   Wi-Fi, and restarts NetworkManager if that doesn't help (#207). Check it with
   `systemctl list-timers jarvis-netwatch.timer` and `jarvis-logs --component system`.
+- **Shell:** the prompt shows the git branch (`✗` = uncommitted changes), like the
+  devcontainer; `ll` is `ls -la`; `vim` is the editor. Open a new terminal after setup.
 - **Reaching the Pi:** `ssh <user>@<pi>` or VS Code Remote-SSH from your tailnet, or
   [Raspberry Pi Connect](https://connect.raspberrypi.com) in a browser (not used by deploys).
