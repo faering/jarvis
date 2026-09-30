@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/faering/jarvis/compare/agent-v0.6.0...agent-v0.6.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **agent:** log shutdown drains a full queue instead of raising queue.Full ([1e578e0](https://github.com/faering/jarvis/commit/1e578e09027d609815b3c30fe8e36ce00c75509a)), closes [#233](https://github.com/faering/jarvis/issues/233)
+
 ## [0.6.0](https://github.com/faering/jarvis/compare/agent-v0.5.1...agent-v0.6.0) (2026-09-29)
 
 
