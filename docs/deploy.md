@@ -66,6 +66,9 @@ flowchart LR
   purpose, run `deploy` by hand with the older version. A failed *first* agent deploy
   removes the container instead. The app `.deb` is staged in `~/jarvis/incoming/` and
   becomes `~/jarvis/app/current.deb` only once installed (the old one → `previous.deb`).
+- **The running app restarts itself** into a newly installed version once Jarvis has been
+  quiet for 10 s (not talking, not typing, no reply on screen), full screen as before (#183).
+  To force it: Alt+F4, then `jarvis-app --fullscreen` on the Pi's desktop, or a reboot.
 - **Enable it:** follow the [Pi first-time setup](pi-setup.md) (Tailscale,
   deploy key, the `pi` environment and its secrets, then `PI_DEPLOY_ENABLED=true`).
 - **Pi prerequisites:** Pi OS Trixie or newer (64-bit; the `.deb` is built on Ubuntu 24.04),

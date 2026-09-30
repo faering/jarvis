@@ -14,6 +14,8 @@ import {
   initialScreen,
   saveDemo,
 } from "./screens/selection.ts";
+import { onUpdateInstalled, restartApp } from "./update/restart.ts";
+import { RestartWhenQuiet } from "./update/restartWhenQuiet.ts";
 import { bindWindowControls } from "./window/controls.ts";
 import { minimizeWindow } from "./window/minimize.ts";
 
@@ -67,6 +69,27 @@ export function App({ agent }: { agent: AgentClient }) {
       }),
     [agent],
   );
+  // A deploy installed a new version: restart into it once Jarvis is quiet (#183).
+  // Created in the effect, so StrictMode's extra cleanup-and-rerun gets a fresh one.
+  const restarter = useRef<RestartWhenQuiet | null>(null);
+  useEffect(() => {
+    const quiet = new RestartWhenQuiet((v) => void restartApp(v));
+    restarter.current = quiet;
+    const off = onUpdateInstalled((v) => quiet.updateInstalled(v));
+    return () => {
+      off();
+      quiet.dispose();
+      restarter.current = null;
+    };
+  }, []);
+  const captions = presence.captions?.length ?? 0;
+  useEffect(() => {
+    restarter.current?.activity({
+      state: presence.state,
+      typing: typing !== null,
+      captions,
+    });
+  }, [presence.state, typing, captions]);
 
   return (
     <div className="app">

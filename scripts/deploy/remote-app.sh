@@ -101,7 +101,7 @@ EOF
     ! -path "$current" ! -path "$previous" \
     ! -path "$current.sigstore.json" ! -path "$previous.sigstore.json" -delete
   [[ -n "$prev_kept" ]] || rm -f "$previous" "$previous.sigstore.json"
-  log INFO deploy.app "deployed; takes effect on the next app start" version="$expected"
+  log INFO deploy.app "deployed; the running app restarts into it once Jarvis is quiet (#183)" version="$expected"
   exit 0
 fi
 
