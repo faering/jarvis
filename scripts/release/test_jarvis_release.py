@@ -192,6 +192,10 @@ class NotesTest(unittest.TestCase):
         self.assertEqual(jr.closing_keywords(notes), [])
         self.assertIn("fixes issue #12", notes)
 
+    def test_plain_text_has_no_middle_dot_or_long_dashes(self):
+        text = "docs: ADR 0008 \u2014 1\u20134B \u00b7 fixes #3"
+        self.assertEqual(jr.plain(text), "docs: ADR 0008 - 1-4B , fixes issue #3")
+
     def test_closing_keyword_detection(self):
         for text in (
             "Closes #1",

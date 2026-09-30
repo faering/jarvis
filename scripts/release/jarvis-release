@@ -263,6 +263,16 @@ def defuse(text: str) -> str:
     return CLOSING.sub(lambda m: f"{m.group(1)}{m.group(2)}issue {m.group(3)}", text)
 
 
+# Characters the repo never uses (AGENTS.md "Write for people"; the no-middle-dot hook
+# rejects them): old commit subjects and issue titles can still carry them.
+PLAIN = str.maketrans({"\u2014": "-", "\u2013": "-", "\u00b7": ","})
+
+
+def plain(text: str) -> str:
+    """Release text from commits and issues: defused, without middle dots or long dashes."""
+    return defuse(text).translate(PLAIN)
+
+
 def closing_keywords(text: str) -> list[str]:
     return [m.group(0) for m in CLOSING.finditer(text)]
 
@@ -355,7 +365,7 @@ def render_changes(changes: list[Change], since: str | None) -> list[str]:
             continue
         lines += ["", f"<details><summary>{area} ({len(rows)})</summary>", ""]
         lines += [
-            f"- {defuse(c.subject)} ([{c.sha[:7]}](https://github.com/{r}/commit/{c.sha}))"
+            f"- {plain(c.subject)} ([{c.sha[:7]}](https://github.com/{r}/commit/{c.sha}))"
             for c in rows
         ]
         lines += ["", "</details>"]
@@ -388,7 +398,7 @@ def render_notes(
         sec = section(i)
         if i["state"] != "closed" or i.get("state_reason") == "not_planned" or not sec:
             continue
-        grouped[sec].append(f"- {defuse(i['title'])} ([#{i['number']}]({i['html_url']}))")
+        grouped[sec].append(f"- {plain(i['title'])} ([#{i['number']}]({i['html_url']}))")
     for sec in SECTIONS:
         if grouped[sec]:
             lines += ["", f"## {sec}", *grouped[sec]]
