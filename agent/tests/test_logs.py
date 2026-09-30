@@ -325,6 +325,42 @@ def test_a_full_queue_drops_instead_of_blocking(monkeypatch: pytest.MonkeyPatch)
     release.set()
 
 
+def test_shutdown_drains_a_full_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#233: stopping with the queue full used to raise queue.Full instead of draining."""
+    started, release = threading.Event(), threading.Event()
+    emitted: list[str] = []
+
+    class Stuck(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            started.set()
+            release.wait(5)
+            emitted.append(record.getMessage())
+
+    monkeypatch.setattr(log_setup, "QUEUE_SIZE", 5)
+    installed = logs.configure(LogSettings(), stderr=False, extra_handlers=[Stuck()])
+    log = logging.getLogger("jarvis_agent.x")
+    log.warning("first")
+    assert started.wait(5)  # the listener holds "first": the queue is empty again
+    for i in range(20):
+        log.warning("line %d", i)  # 5 fit, the rest are dropped
+    assert installed.handler.queue.full()  # type: ignore[attr-defined]
+    errors: list[BaseException] = []
+
+    def stop() -> None:
+        try:
+            logs.shutdown()
+        except BaseException as exc:  # noqa: BLE001 - the test reports it
+            errors.append(exc)
+
+    stopper = threading.Thread(target=stop)
+    stopper.start()
+    release.set()
+    stopper.join(5)
+    assert not stopper.is_alive()
+    assert errors == []
+    assert emitted == ["first", *(f"line {i}" for i in range(5))]
+
+
 # ---- configuration ---------------------------------------------------------------------
 
 
