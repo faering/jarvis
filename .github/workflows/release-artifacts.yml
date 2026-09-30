@@ -15,7 +15,7 @@ run-name: release-artifacts ${{ inputs.tag || github.event.release.tag_name }}
 # Gate: nothing is built unless the tagged commit's `ci-ok` check passed.
 # Sources come from the tag; release tooling (.ci/) from github.workflow_sha, the commit
 # this workflow file was read from: the tag's commit on `release`, the dispatched branch
-# (default: main) on `workflow_dispatch` — so rebuilding an old tag uses current tooling.
+# (default: main) on `workflow_dispatch` - so rebuilding an old tag uses current tooling.
 on:
   release:
     types: [published]

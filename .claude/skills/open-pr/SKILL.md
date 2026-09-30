@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open a pull request for the current branch — draft the description from the diff and link the issue it closes. MCP-first. Use when a work item's branch is ready for review.
+description: Open a pull request for the current branch - draft the description from the diff and link the issue it closes. MCP-first. Use when a work item's branch is ready for review.
 ---
 
 # open-pr
@@ -15,7 +15,7 @@ lines** (see [[feedback-no-attribution]] and [[feedback-always-pr]]).
 1. Review `git diff main..HEAD` and the commit log; summarize what changed and why.
 2. Draft the PR body: a short "What's in it" summary + **`Closes #<n>`** for the work item.
    Put the closing keyword in the **PR body** (survives squash) and **repeat the keyword per
-   issue** — `Closes #1, closes #2` (see the linking rules in AGENTS.md). Use `Refs #<n>` for
+   issue** - `Closes #1, closes #2` (see the linking rules in AGENTS.md). Use `Refs #<n>` for
    related-but-not-closed.
 3. `create_pull_request` (base `main`, head = current branch). **No `Co-Authored-By` or
    Claude attribution anywhere.**

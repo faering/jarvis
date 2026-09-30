@@ -36,7 +36,7 @@ export const DEMO_SCRIPT: readonly DemoStep[] = [
     state: "offloaded",
     expression: "curious",
     durationMs: 4000,
-    captions: [{ who: "jarvis", text: "Give me a moment — I'll ping you." }],
+    captions: [{ who: "jarvis", text: "Give me a moment - I'll ping you." }],
   },
   {
     state: "speaking",

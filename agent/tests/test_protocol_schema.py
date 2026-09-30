@@ -48,7 +48,7 @@ def _prop_ok(value: Any, prop: dict[str, Any]) -> bool:
 
 
 def _conforms(payload: dict[str, Any], schema: dict[str, Any]) -> bool:
-    """Tiny structural check (required keys, property keywords, oneOf) — no validator dependency."""
+    """Tiny structural check (required keys, property keywords, oneOf) - no validator dependency."""
     if any(key not in payload for key in schema.get("required", [])):
         return False
     if not all(

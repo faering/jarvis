@@ -1,13 +1,13 @@
 ---
 name: docs-lookup
-description: Fetch current, version-accurate library/framework/API documentation via the context7 MCP server before answering or coding against a dependency. Use whenever a question or task touches a specific library, framework, tool, SDK, or API — especially for version-specific behavior, config, or anything that may have changed since the knowledge cutoff.
+description: Fetch current, version-accurate library/framework/API documentation via the context7 MCP server before answering or coding against a dependency. Use whenever a question or task touches a specific library, framework, tool, SDK, or API - especially for version-specific behavior, config, or anything that may have changed since the knowledge cutoff.
 ---
 
 # docs-lookup
 
 Stay current instead of relying on memory. The training cutoff is stale for
-fast-moving tooling (this repo's stack — uv, ruff, Tauri, Node, release-please,
-pre-commit, the Anthropic/Claude API, etc. — all move faster than that).
+fast-moving tooling (this repo's stack - uv, ruff, Tauri, Node, release-please,
+pre-commit, the Anthropic/Claude API, etc. - all move faster than that).
 
 ## When to use
 - Any task or question about a specific library/framework/tool/SDK/API.
@@ -25,7 +25,7 @@ pre-commit, the Anthropic/Claude API, etc. — all move faster than that).
 
 ## If context7 can't answer
 Fall back to a targeted web search (WebSearch/WebFetch) for the official docs or
-changelog. If the answer is still unclear, say so plainly and ask — do not guess at
+changelog. If the answer is still unclear, say so plainly and ask - do not guess at
 version-specific behavior. (See the Operating principles in CLAUDE.md.)
 
 ## Notes

@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # ---- System deps -----------------------------------------------------------
 # build-essential/pkg-config/openssl: Rust + native builds.
 # libwebkit2gtk/gtk/appindicator/rsvg: Tauri Linux runtime + build deps.
-# Python itself is NOT installed via apt — Ubuntu 24.04 only ships 3.12; we use
+# Python itself is NOT installed via apt - Ubuntu 24.04 only ships 3.12; we use
 # uv to install and manage the pinned Python instead.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \

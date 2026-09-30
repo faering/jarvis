@@ -2,7 +2,7 @@ name: jarvis-release
 
 # Named Jarvis releases (#162, docs/deploy.md "Cut a Jarvis release").
 # - On merge of a release PR (a new/changed releases/jarvis-N.toml on main): once main's
-#   ci-ok passed, tag jarvis-vN.M, publish "Jarvis N — <Codename>" with the reviewed notes
+#   ci-ok passed, tag jarvis-vN.M, publish "Jarvis N - <Codename>" with the reviewed notes
 #   (releases/jarvis-N.md) and the manifest attached, mark it Latest and close the milestone.
 #   The README roadmap block was already regenerated in the release PR.
 # - On a component release (agent-v* / app-v*, published by release-please): mark the

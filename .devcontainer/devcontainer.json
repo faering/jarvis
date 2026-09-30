@@ -25,7 +25,7 @@
     "jarvis-net"
   ],
   "mounts": [
-    // Claude Code login/trust/history — a SHARED volume across all your devcontainers.
+    // Claude Code login/trust/history - a SHARED volume across all your devcontainers.
     // Per-project separation comes from CLAUDE_CODE_PROJECT_DIR_NAME (remoteEnv below),
     // which pins ~/.claude/projects/<name>/ regardless of repo.
     "source=claude-code-home,target=/home/vscode/.claude,type=volume",
@@ -37,7 +37,7 @@
   ],
   "containerEnv": {
     // CLAUDE_CONFIG_DIR redirects ~/.claude.json (login/trust, which lives OUTSIDE
-    // ~/.claude) into the mounted volume too — required alongside the mount above.
+    // ~/.claude) into the mounted volume too - required alongside the mount above.
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
     "HISTFILE": "/commandhistory/.bash_history",
     // Forward host token for gh/CLI tooling in container. If missing, gh can still

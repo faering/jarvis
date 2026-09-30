@@ -10,7 +10,7 @@ mirror is a fast local cache. Work-item shape + fields: `_shared/issue-schema.md
 MCP-first (`mcp__github__*`).
 
 ## Steps
-1. **List issues** — `list_issues` (state `all`, paginate 5–10) or `search_issues`. For each
+1. **List issues** - `list_issues` (state `all`, paginate 5–10) or `search_issues`. For each
    read number, node_id, title, body, labels, assignees, state, updated_at, url, and the
    sub-issue parent if present.
 2. **Map each to a WorkItem:**

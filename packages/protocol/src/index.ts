@@ -1,5 +1,5 @@
 /**
- * Agent <-> app WebSocket contract, envelope v0 — the TS side of
+ * Agent <-> app WebSocket contract, envelope v0 - the TS side of
  * ../protocol.schema.json (the single source of truth; index.test.ts fails on
  * drift). The Python side is agent/src/jarvis_agent/protocol.py.
  *
