@@ -105,7 +105,10 @@ tested sets with the same codename.
      --codename "Captain America"        # optional: --agent 0.4.0 --app 0.1.1
    ```
    This writes `releases/jarvis-1.toml` (the manifest), `releases/jarvis-1.md` (notes from
-   the milestone's closed issues) and the README roadmap block, and warns about open issues.
+   the milestone's closed issues, plus every non-chore commit since the previous Jarvis
+   release, grouped Agent / App / Pi and repo) and the README roadmap block, and warns about
+   open issues. Where changes are recorded: agent and app changes in their `CHANGELOG.md`;
+   everything else (Pi setup, deploy, CI, protocol, docs) only in the Jarvis release notes.
 3. Edit the notes if needed; never write "closes/fixes #n" (CI refuses closing keywords).
    Commit with `cz commit` (`chore(repo): release Jarvis 1 — Captain America`), push, open
    a PR. Its `jarvis release (pinned set)` check validates the manifest, the compatibility

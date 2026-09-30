@@ -211,6 +211,66 @@ class NotesTest(unittest.TestCase):
         self.assertIsNone(jr.milestone_codename(None))
 
 
+class ChangesTest(RepoCase):
+    """All changes since the previous Jarvis release (#237)."""
+
+    def commit(self, subject, *paths):
+        for path in paths:
+            f = self.root / path
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(f"{subject}\n", encoding="utf-8")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", subject)
+
+    def test_grouped_by_path_chores_skipped_since_the_previous_tag(self):
+        self.commit("feat(agent): before the release", "agent/a.py")
+        git(self.root, "tag", "jarvis-v1.0")
+        self.commit("feat(agent): talks", "agent/a.py", "docs/a.md")
+        self.commit("fix(app): shows", "frontend/src/a.ts")
+        self.commit("feat(repo): both", "agent/b.py", "frontend/b.ts")
+        self.commit("fix(repo): Pi setup, fixes #12", "scripts/pi/setup.sh")
+        self.commit("chore(main): release agent 1.2.3", "agent/CHANGELOG.md")
+        self.commit("docs(repo): readme", "README.md")
+
+        since = jr.previous_jarvis_tag(before="1.1")
+        self.assertEqual(since, "jarvis-v1.0")
+        changes = jr.changes_since(since)
+        self.assertEqual(
+            [(c.subject, c.areas) for c in changes],
+            [
+                ("feat(agent): talks", ("Agent",)),
+                ("fix(app): shows", ("App",)),
+                ("feat(repo): both", ("Agent", "App")),
+                ("fix(repo): Pi setup, fixes #12", ("Pi and repo",)),
+                ("docs(repo): readme", ("Pi and repo",)),
+            ],
+        )
+        text = "\n".join(jr.render_changes(changes, since))
+        self.assertIn("## All changes since jarvis-v1.0", text)
+        self.assertIn("<details><summary>Agent (2)</summary>", text)
+        self.assertIn("<details><summary>App (2)</summary>", text)
+        self.assertIn("<details><summary>Pi and repo (2)</summary>", text)
+        self.assertIn(f"https://github.com/faering/jarvis/commit/{changes[0].sha}", text)
+        self.assertEqual(jr.closing_keywords(text), [])  # "fixes issue #12"
+        self.assertNotIn("before the release", text)
+
+    def test_first_release_covers_all_history(self):
+        self.commit("feat(agent): one", "agent/a.py")
+        self.assertIsNone(jr.previous_jarvis_tag(before="1.0"))
+        self.assertEqual([c.subject for c in jr.changes_since(None)], ["feat(agent): one"])
+        text = "\n".join(jr.render_changes(jr.changes_since(None), None))
+        self.assertIn("## All changes since the start", text)
+        self.assertNotIn("App (", text)  # empty groups are left out
+
+    def test_previous_tag_is_the_newest_older_one(self):
+        for tag in ("jarvis-v1.0", "jarvis-v1.2", "jarvis-v2.0"):
+            self.commit(tag, f"{tag}.txt")
+            git(self.root, "tag", tag)
+        self.assertEqual(jr.previous_jarvis_tag(before="2.0"), "jarvis-v1.2")
+        self.assertEqual(jr.previous_jarvis_tag(before="1.10"), "jarvis-v1.2")
+        self.assertEqual(jr.previous_jarvis_tag(), "jarvis-v2.0")
+
+
 class ReadmeTest(unittest.TestCase):
     def test_block_from_milestones_and_manifests(self):
         mss = FIXTURES["repos/faering/jarvis/milestones"]
