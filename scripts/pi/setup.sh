@@ -729,6 +729,24 @@ for alt in editor vi vim; do # nano outranks vim as `editor`; set all three expl
     act "$alt -> vim" update-alternatives --quiet --set "$alt" /usr/bin/vim.basic
 done
 
+# ---- 8c. browser: no keyring (#211) ---------------------------------------------------------
+# Chromium keeps its encryption key in the Secret Service; with autologin nothing unlocks the
+# keyring, so opening the browser pops up "Choose password for new keyring". The keyring
+# package stays (rpd-common, the desktop, depends on it); Chromium just never uses it, and
+# saves no passwords. Trade-off: logged-in sessions are protected only by Chromium's
+# built-in key, so don't stay logged in to anything sensitive in the Pi's browser.
+section "browser"
+# Debian's chromium wrapper sources /etc/chromium.d/* for its flags.
+ensure_file /etc/chromium.d/90-jarvis 644 root:root <<EOF || :
+# $MARK (#211)
+export CHROMIUM_FLAGS="\$CHROMIUM_FLAGS --password-store=basic"
+EOF
+ensure_file /etc/chromium/policies/managed/jarvis.json 644 root:root <<EOF || :
+{
+  "PasswordManagerEnabled": false
+}
+EOF
+
 # ---- 9. unused services --------------------------------------------------------------------
 section "services"
 for u in "${UNUSED_UNITS[@]}"; do
