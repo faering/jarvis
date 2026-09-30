@@ -292,8 +292,82 @@ def milestone_codename(description: str | None) -> str | None:
     return None if not name or name.lower().startswith("to be") else name
 
 
+# Where a change is recorded besides the Jarvis release: its component's CHANGELOG, or
+# nowhere (Pi setup, deploy/CI, packages/, docs); the Jarvis notes list them all.
+CHANGE_AREAS = {"agent": "Agent", "app": "App"}
+OTHER_AREA = "Pi and repo"
+
+
+@dataclass(frozen=True)
+class Change:
+    sha: str
+    subject: str
+    areas: tuple[str, ...]
+
+
+def area_of(paths: list[str]) -> tuple[str, ...]:
+    """The component(s) a commit belongs to, by path, like release-please; else Pi and repo."""
+    areas = tuple(
+        CHANGE_AREAS[comp]
+        for comp, path in COMPONENTS.items()
+        if any(p.startswith(f"{path}/") for p in paths)
+    )
+    return areas or (OTHER_AREA,)
+
+
+def changes_since(tag: str | None) -> list[Change]:
+    """Every commit since ``tag`` (the previous Jarvis release; None = all history), oldest
+    first, without chores (release bumps, housekeeping) and merges."""
+    try:
+        git("rev-parse", "--verify", "-q", "HEAD")
+    except subprocess.CalledProcessError:
+        return []  # no commits yet
+    rev = f"{tag}..HEAD" if tag else "HEAD"
+    out = git("log", "--reverse", "--no-merges", "--name-only", "--format=%x1e%H%x1f%s", rev)
+    changes = []
+    for record in out.split("\x1e")[1:]:
+        head, _, files = record.partition("\n")
+        sha, _, subject = head.partition("\x1f")
+        if re.match(r"chore(\(|:|!)", subject):
+            continue
+        changes.append(Change(sha, subject, area_of([f for f in files.split("\n") if f])))
+    return changes
+
+
+def previous_jarvis_tag(before: str | None = None) -> str | None:
+    """The newest released Jarvis tag (older than ``before``, when given)."""
+    tags = sorted(jarvis_tags(), key=lambda t: semver_key(t.removeprefix("jarvis-v")))
+    if before:
+        tags = [t for t in tags if semver_key(t.removeprefix("jarvis-v")) < semver_key(before)]
+    return tags[-1] if tags else None
+
+
+def render_changes(changes: list[Change], since: str | None) -> list[str]:
+    r = repo()
+    lines = ["", f"## All changes since {since or 'the start'}"]
+    lines.append(
+        "Every commit in this release, chores left out. Agent and App changes are also in "
+        "their CHANGELOGs; Pi and repo changes (Pi setup, deploy, CI, protocol, docs) only here."
+    )
+    for area in (*CHANGE_AREAS.values(), OTHER_AREA):
+        rows = [c for c in changes if area in c.areas]
+        if not rows:
+            continue
+        lines += ["", f"<details><summary>{area} ({len(rows)})</summary>", ""]
+        lines += [
+            f"- {defuse(c.subject)} ([{c.sha[:7]}](https://github.com/{r}/commit/{c.sha}))"
+            for c in rows
+        ]
+        lines += ["", "</details>"]
+    return lines
+
+
 def render_notes(
-    man: Manifest, ms: dict, issues: list[dict], previous: Manifest | None = None
+    man: Manifest,
+    ms: dict,
+    issues: list[dict],
+    previous: Manifest | None = None,
+    changes: tuple[list[Change], str | None] | None = None,
 ) -> str:
     r = repo()
     lines = [f"**{man.title}**: {MILESTONE_TITLE.match(man.milestone).group(2)}", ""]
@@ -318,6 +392,8 @@ def render_notes(
     for sec in SECTIONS:
         if grouped[sec]:
             lines += ["", f"## {sec}", *grouped[sec]]
+    if changes is not None:
+        lines += render_changes(*changes)
     lines += [
         "",
         f"Milestone: [{man.milestone}]({ms.get('html_url', '')}). "
@@ -433,7 +509,9 @@ def cmd_draft(a: argparse.Namespace) -> int:
     path.parent.mkdir(exist_ok=True)
     path.write_text(man.dumps(), encoding="utf-8")
     notes = path.with_suffix(".md")
-    notes.write_text(render_notes(man, ms, issues, previous), encoding="utf-8")
+    since = previous_jarvis_tag(before=version)
+    changes = (changes_since(since), since)
+    notes.write_text(render_notes(man, ms, issues, previous, changes), encoding="utf-8")
     update_readme()
     print(f"wrote {path.relative_to(ROOT)}, {notes.relative_to(ROOT)} and README.md")
     print(f"{man.tag}: {man.title} (agent {man.agent}, app {man.app})")
@@ -448,7 +526,9 @@ def cmd_notes(a: argparse.Namespace) -> int:
     previous = (
         manifest_at(f"jarvis-v{man.number}.{man.minor - 1}", man.number) if man.minor else None
     )
-    sys.stdout.write(render_notes(man, ms, milestone_issues(ms["number"]), previous))
+    since = previous_jarvis_tag(before=man.version)
+    changes = (changes_since(since), since)
+    sys.stdout.write(render_notes(man, ms, milestone_issues(ms["number"]), previous, changes))
     return 0
 
 
