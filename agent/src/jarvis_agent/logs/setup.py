@@ -72,12 +72,21 @@ class DroppingQueueHandler(QueueHandler):
             self.dropped += 1
 
 
+class DrainingQueueListener(QueueListener):
+    """A ``QueueListener`` whose ``stop()`` works on a full queue. The stdlib puts its stop
+    marker with ``put_nowait``, which raises ``queue.Full`` on a bounded queue the thread
+    hasn't drained yet (#233). Waiting is safe: the listener thread is emptying the queue."""
+
+    def enqueue_sentinel(self) -> None:
+        self.queue.put(self._sentinel)  # type: ignore[attr-defined]
+
+
 @dataclass
 class Logging:
     """What ``configure()`` installed; ``stop()`` flushes the queue and undoes it."""
 
     handler: DroppingQueueHandler
-    listener: QueueListener
+    listener: DrainingQueueListener
     file: DailyFileHandler | None
     _levels: dict[str, int] = field(default_factory=dict)  # logger -> level before
     _uvicorn: dict[str, tuple[list[logging.Handler], bool]] = field(default_factory=dict)
@@ -124,7 +133,7 @@ def configure(
 
     q: queue.Queue[logging.LogRecord] = queue.Queue(QUEUE_SIZE)
     handler = DroppingQueueHandler(q)
-    listener = QueueListener(q, *handlers, respect_handler_level=True)
+    listener = DrainingQueueListener(q, *handlers, respect_handler_level=True)
     installed = Logging(handler, listener, file)
 
     root = logging.getLogger()
