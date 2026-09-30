@@ -4,6 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod logging;
+mod update;
 
 use tauri::Manager;
 
@@ -46,12 +47,16 @@ fn main() {
             if fullscreen && let Some(window) = app.get_webview_window("main") {
                 window.set_fullscreen(true)?;
             }
+            update::watch(app.handle());
             Ok(())
         })
         // Only the webview's `log` command: logging::init() installed the logger.
         .plugin(tauri_plugin_log::Builder::new().skip_logger().build())
         .plugin(logging::level_plugin())
-        .invoke_handler(tauri::generate_handler![minimize_window])
+        .invoke_handler(tauri::generate_handler![
+            minimize_window,
+            update::restart_app
+        ])
         .run(tauri::generate_context!());
     if let Err(err) = result {
         logging::fatal!("error while running the Jarvis app: {err}");

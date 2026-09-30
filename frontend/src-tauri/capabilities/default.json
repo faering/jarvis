@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Core permissions for the main window.",
   "windows": ["main"],
-  "permissions": ["core:default", "log:default", "allow-minimize-window"]
+  "permissions": [
+    "core:default",
+    "log:default",
+    "allow-minimize-window",
+    "allow-restart-app"
+  ]
 }
