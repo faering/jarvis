@@ -164,7 +164,7 @@ class Manifest:
     @property
     def title(self) -> str:
         n = str(self.number) if self.minor == 0 else self.version
-        return f"Jarvis {n} — {self.codename}"
+        return f"Jarvis {n} - {self.codename}"
 
     def dumps(self) -> str:
         s = lambda v: json.dumps(v, ensure_ascii=False)  # noqa: E731 (TOML basic string)

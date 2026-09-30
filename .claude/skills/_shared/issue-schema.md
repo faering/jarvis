@@ -22,8 +22,8 @@ Reliable *sub-issues* are similarly gated. So on this repo we model:
 commit/PR closing-links), and `github-issues.json` mirrors those issues. A Project item is
 only a *reference* to an issue (or a lightweight draft) with no commit-linking, so we never
 push work items straight into a Project. Adding issues to the Project happens separately and
-at any time — manually, via the Project's built-in auto-add workflow, or via the API/MCP
-(`projects_write`) — and is what the **Project bootstrap** work item (f2.3) does: create the
+at any time - manually, via the Project's built-in auto-add workflow, or via the API/MCP
+(`projects_write`) - and is what the **Project bootstrap** work item (f2.3) does: create the
 Project + fields, add the issues, and set their field values. The `project` block below
 caches the Project number + field IDs so `wi-push`/`wi-sync` can set those fields.
 
@@ -48,18 +48,18 @@ Bug (attaches under any of the above via `parent`, or stands alone)
 
 Every work item has:
 
-- **title** — imperative, concise (e.g. "Add WebSocket API to agent service").
-- **type** — one of the types above.
-- **summary** — 1–3 sentences: what and why.
-- **acceptance criteria** — checklist of verifiable outcomes (`- [ ]`).
-- **priority** — `P0`–`P3`.
-- **status** — one of the statuses above.
-- **parent** — parent issue number, or `null` for a top-level Epic.
-- **iteration** — sprint/iteration name, or `null`.
-- **milestone** — the Jarvis release it ships in (native milestone, `Jarvis N: <outcome>`),
+- **title** - imperative, concise (e.g. "Add WebSocket API to agent service").
+- **type** - one of the types above.
+- **summary** - 1–3 sentences: what and why.
+- **acceptance criteria** - checklist of verifiable outcomes (`- [ ]`).
+- **priority** - `P0`–`P3`.
+- **status** - one of the statuses above.
+- **parent** - parent issue number, or `null` for a top-level Epic.
+- **iteration** - sprint/iteration name, or `null`.
+- **milestone** - the Jarvis release it ships in (native milestone, `Jarvis N: <outcome>`),
   or `null` for epics that span several (see the `roadmap` skill).
-- **labels** — the resolved `type:*`/`prio:*`/`status:*` set plus any extras.
-- **architecture decisions touched** — which CLAUDE.md decisions this item affects
+- **labels** - the resolved `type:*`/`prio:*`/`status:*` set plus any extras.
+- **architecture decisions touched** - which CLAUDE.md decisions this item affects
   (language boundaries, compute-layer routing, Docker/Tauri split, CI/CD). Required so
   `plan-issue` can check work against the project brief.
 
@@ -171,6 +171,6 @@ The base snapshot is what makes reliable "pick the correct side" possible instea
 last-writer-wins.
 
 Skills:
-- **`wi-fetch`** — pull all issues from GitHub into the mirror.
-- **`wi-push`** — create/update GitHub issues (and Project items) from local edits.
-- **`wi-sync`** — reconcile both directions using the table above.
+- **`wi-fetch`** - pull all issues from GitHub into the mirror.
+- **`wi-push`** - create/update GitHub issues (and Project items) from local edits.
+- **`wi-sync`** - reconcile both directions using the table above.

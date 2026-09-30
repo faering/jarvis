@@ -1,4 +1,4 @@
-# Jarvis — Agent & Engineering Instructions
+# Jarvis - Agent & Engineering Instructions
 
 Canonical, tool-agnostic instructions for any AI agent (and humans) working on Jarvis.
 Keep it lean. Domain vocabulary lives in [CONTEXT.md](CONTEXT.md); per-language deep rules
@@ -6,7 +6,7 @@ live in `.claude/rules/` and load only when you touch matching files.
 
 ## Who you are
 An **expert software engineer** on Jarvis. You own code quality, architecture fit, and
-correctness — not just output. Expert in:
+correctness - not just output. Expert in:
 - **This stack:** Python (agent/API + tools), TypeScript/React (frontend), Rust (Tauri
   backend only), Docker/Compose, devcontainers, GitHub Actions, and the Raspberry Pi 5 /
   Hailo NPU / IMX500 hardware target.
@@ -14,10 +14,10 @@ correctness — not just output. Expert in:
 
 ## How you behave (operating principles)
 - **Ask when in doubt.** Don't assume or silently infer intent on anything ambiguous or
-  consequential — ask a focused question first.
+  consequential - ask a focused question first.
 - **Don't know? Find out.** Fetch current, version-accurate info from the web or context7
   (see the `docs-lookup` skill) before answering. Never guess at version-specific behavior.
-  If it's still unclear, say so plainly and ask — don't paper over uncertainty.
+  If it's still unclear, say so plainly and ask - don't paper over uncertainty.
 - **Respect the boundaries** below (language boundaries, Docker/Tauri split, Pi-only
   paths). Flag anything a task would force you to cross.
 - **Be concise and coherent.** Short, direct, no clutter or filler. Answer what's asked;
@@ -37,12 +37,12 @@ the day, take notes, manage the calendar, and act as a sparring partner for hobb
 - **Routing across three layers:** IMX500 on-camera inference → Hailo NPU → Pi 5 CPU
   orchestrator.
 - The always-on voice loop uses small quantized models (1–4B class). Heavier tasks route
-  **async** to the cloud or larger local models — never on the hot path.
+  **async** to the cloud or larger local models - never on the hot path.
 
 ## Language boundaries (do not cross)
-- **Python** — agent/API layer and all tools.
-- **TypeScript/React** — the frontend.
-- **Rust** — strictly the Tauri backend. Never leaks into agent logic.
+- **Python** - agent/API layer and all tools.
+- **TypeScript/React** - the frontend.
+- **Rust** - strictly the Tauri backend. Never leaks into agent logic.
 - **Frontend = React/TS in the Tauri webview.** A native Rust GUI (Slint) is a possible
   future swap, only if a hardware spike justifies it ([ADR 0001](docs/adr/0001-frontend-stack.md)).
 
@@ -54,11 +54,11 @@ the day, take notes, manage the calendar, and act as a sparring partner for hobb
 - **Speech output never blocks:** producer/consumer async queue with turn-boundary checks.
 
 ### Planned monorepo layout & JS/TS tooling
-- **`agent/`** — Python (Docker). Not part of the JS workspace; orchestrated via Docker
+- **`agent/`** - Python (Docker). Not part of the JS workspace; orchestrated via Docker
   Compose + pytest.
-- **`frontend/`** — the Tauri **app** (TS/React UI + Rust `src-tauri/`).
+- **`frontend/`** - the Tauri **app** (TS/React UI + Rust `src-tauri/`).
 - **JS/TS side is a pnpm workspace**, bundled with **Vite** (Tauri's default). **Turborepo**
-  is adopted **together with the frontend skeleton** (backlog f4.1) — not before, since
+  is adopted **together with the frontend skeleton** (backlog f4.1) - not before, since
   there's no JS to orchestrate until then; its caching/task-graph pays off as packages grow.
 - **Anticipated `packages/*`** (drive the workspace design): `protocol` (TS types/schema for
   the agent↔app WebSocket contract), `ui` (shared React components), `config` (shared
@@ -66,30 +66,30 @@ the day, take notes, manage the calendar, and act as a sparring partner for hobb
 - Work happens in the devcontainer (Python 3.14, Node 24 LTS, Rust, Tauri), with
   docker-outside-of-docker so `docker compose up` targets the agent stack. Toolchains are
   pinned to latest stable and bumped deliberately.
-- **The hardware inference path (Hailo SDK, IMX500 camera, GPIO) runs only on the Pi** — it
+- **The hardware inference path (Hailo SDK, IMX500 camera, GPIO) runs only on the Pi** - it
   is not part of the devcontainer, which is for agent/API/UI code, tests, and CI.
 
 ## Standards (enforced from commit #1)
 - **pre-commit**: format + lint on the `pre-commit` stage, tests on `pre-push`.
 - **Conventional Commits** via commitizen on the `commit-msg` stage. Use `cz commit`.
-  commitizen lints messages only — it does **not** bump versions.
-- **Releases**: automated by **release-please** — see *Releases & commit conventions*.
+  commitizen lints messages only - it does **not** bump versions.
+- **Releases**: automated by **release-please** - see *Releases & commit conventions*.
 - Run CI locally with **`act`** (`scripts/ci-local.sh`) before pushing.
-- **Write for people:** never use the middle dot (U+00B7) as a separator, in docs, UI,
-  generated text or anywhere else; use commas, "and", brackets or a list. The
-  `no-middle-dot` pre-commit hook enforces it.
+- **Write for people:** never use the middle dot (U+00B7) as a separator or the em dash
+  (U+2014), in docs, UI, generated text, commit messages or anywhere else; use commas,
+  "and", brackets, a list or a plain "-". The `no-middle-dot` pre-commit hook enforces it.
 - **Docs: short, concise, no clutter.** Update the doc a change affects in the same PR, and
   prefer extending an existing doc over adding a new one. Record architecture decisions,
   with the alternatives considered, as ADRs in [`docs/adr/`](docs/adr/README.md).
 
 ## Releases & commit conventions (read before every commit)
-Jarvis releases **independently per component** — the two deployable units version and tag
+Jarvis releases **independently per component** - the two deployable units version and tag
 on their own cadence, so we can ship a stable app and keep iterating the agent:
-- **agent** — Python agent/API + tools (Docker image) → tag `agent-vX.Y.Z`, path `agent/`.
-- **app** — Tauri binary (TS/React + Rust `src-tauri/`, released together) → tag
+- **agent** - Python agent/API + tools (Docker image) → tag `agent-vX.Y.Z`, path `agent/`.
+- **app** - Tauri binary (TS/React + Rust `src-tauri/`, released together) → tag
   `app-vX.Y.Z`, path `frontend/`.
 
-**How release-please decides what to release — by the files a commit touches, NOT the
+**How release-please decides what to release - by the files a commit touches, NOT the
 scope.** So:
 - **Keep each PR within ONE component's path** (`agent/**` or `frontend/**`), and each
   commit too. release-please assigns every commit of a merged PR to every component the
@@ -108,15 +108,15 @@ scope.** So:
   merges the release PR, and nothing deploys. It uses the `RELEASE_PLEASE_TOKEN` secret
   ([docs/release-please-token.md](docs/release-please-token.md)) so CI runs on release PRs.
 
-**Linking commits & PRs to their work-item issue** (GitHub is strict — these are the traps):
+**Linking commits & PRs to their work-item issue** (GitHub is strict - these are the traps):
 - **A closing keyword is required.** Recognized: `close/closes/closed`, `fix/fixes/fixed`,
-  `resolve/resolves/resolved`. A **bare `#12` only mentions/links — it does NOT close.**
+  `resolve/resolves/resolved`. A **bare `#12` only mentions/links - it does NOT close.**
 - **Repeat the keyword before every issue:** `Closes #1, closes #2`. `Closes #1, #2` closes
   only #1.
 - **Only the default branch closes.** A keyword in a **commit message** closes the issue when
   the commit lands on `main`; on a feature branch it is ignored until merged. In a **PR
   description** the issue auto-closes when the PR merges into `main` (and shows as a linked PR).
-- **Squash-merge drops commit-message footers** — so when merging via a PR, put every
+- **Squash-merge drops commit-message footers** - so when merging via a PR, put every
   `Closes #n` in the **PR description**, not only in the commits.
 - Use `Refs #n` (no keyword) to link without closing; cross-repo (rare here) is
   `Closes owner/repo#100`.
@@ -140,13 +140,13 @@ Every version shown anywhere must answer: *which tag is this build on, how many 
 ahead, and is the tree dirty?* Derived at build time from
 `git describe --tags --match '<component>-v*' --long --always --dirty`, then reduced to a
 bare `MAJOR.MINOR.PATCH` (strip the `<component>-v` prefix). Because a **Docker tag cannot
-contain `+`**, the same build has two forms — sanitized only where required:
+contain `+`**, the same build has two forms - sanitized only where required:
 
-- **Canonical (strict SemVer)** — app UI, agent `/version`, and the OCI
+- **Canonical (strict SemVer)** - app UI, agent `/version`, and the OCI
   `org.opencontainers.image.version` label (all allow `+`):
   - release (clean tag): `1.2.3`
   - dev: `1.2.3+<ahead>.g<sha>` (dirty → `1.2.3+<ahead>.g<sha>.dirty`)
-- **Docker image tag** (no `+`) — git-describe form:
+- **Docker image tag** (no `+`) - git-describe form:
   - release: `1.2.3`; dev: `1.2.3-<ahead>-g<sha>` (dirty → `1.2.3-<ahead>-g<sha>-dirty`)
 - **`org.opencontainers.image.revision`** = the full commit sha.
 

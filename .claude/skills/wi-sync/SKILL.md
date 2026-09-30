@@ -29,5 +29,5 @@ content). Shape + fields: `_shared/issue-schema.md`.
 
 ## Notes
 - New local items (`number: null`) are always pushes; new remote items are always pulls.
-- Orchestrates the `wi-fetch` + `wi-push` primitives — keep the merge logic here and the
+- Orchestrates the `wi-fetch` + `wi-push` primitives - keep the merge logic here and the
   I/O in those.

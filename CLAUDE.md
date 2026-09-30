@@ -12,5 +12,5 @@ in CONTEXT.md. Only Claude-Code-specific notes belong here.
   branches of merged PRs), `jarvis-release` (cut a named Jarvis release), `wi-fetch`, `wi-push`,
   `wi-sync`. The shared issue schema is `.claude/skills/_shared/issue-schema.md`.
 - **Path-scoped rules** in `.claude/rules/` load automatically when you touch matching files
-  (e.g. `agent/**`, `frontend/**`, `frontend/src-tauri/**`) — don't restate them here.
+  (e.g. `agent/**`, `frontend/**`, `frontend/src-tauri/**`) - don't restate them here.
 - **Plan mode** for large or multi-file changes; confirm the approach before writing.

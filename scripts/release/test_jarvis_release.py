@@ -119,11 +119,11 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual((m.number, m.version, m.agent, m.app), (1, "1.0", "0.4.0", "0.1.1"))
         self.assertEqual(jr.parse_manifest(m.dumps()), m)
         self.assertEqual(m.tag, "jarvis-v1.0")
-        self.assertEqual(m.title, "Jarvis 1 — Captain America")
+        self.assertEqual(m.title, "Jarvis 1 - Captain America")
 
     def test_minor_release_title_shows_the_version(self):
         m = jr.parse_manifest(MANIFEST.replace('"1.0"', '"1.1"'))
-        self.assertEqual(m.title, "Jarvis 1.1 — Captain America")
+        self.assertEqual(m.title, "Jarvis 1.1 - Captain America")
 
     def test_invalid_manifest_lists_every_problem(self):
         bad = MANIFEST.replace('"1.0"', '"2.0"').replace('"0.4.0"', '"latest"')
@@ -170,7 +170,7 @@ class NotesTest(unittest.TestCase):
 
     def test_header_components_and_changelogs(self):
         notes = jr.render_notes(self.man, self.ms, self.issues)
-        self.assertTrue(notes.startswith("**Jarvis 1 — Captain America**: Lives on the Pi"))
+        self.assertTrue(notes.startswith("**Jarvis 1 - Captain America**: Lives on the Pi"))
         self.assertIn("Jarvis runs on the Pi from a CI deploy.", notes)
         self.assertNotIn("Codename:", notes)
         self.assertIn(
@@ -350,7 +350,7 @@ class CheckTest(RepoCase):
         self.assertEqual(code, 0, err)
         env = dict(line.split("=", 1) for line in out.splitlines())
         self.assertEqual(env["TAG"], "jarvis-v1.0")
-        self.assertEqual(env["TITLE"], "Jarvis 1 — Captain America")
+        self.assertEqual(env["TITLE"], "Jarvis 1 - Captain America")
         self.assertEqual((env["AGENT"], env["APP"]), ("0.4.0", "0.1.1"))
         self.assertEqual((env["AGENT_PROTOCOL"], env["APP_PROTOCOL"]), ("2", "2"))
         self.assertIn("::warning::#162 is still open", err)

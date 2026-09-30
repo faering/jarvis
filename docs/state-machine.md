@@ -1,6 +1,6 @@
 # Agent state machine
 
-The brain: the always-on voice loop. Speech output never blocks — it runs on a
+The brain: the always-on voice loop. Speech output never blocks - it runs on a
 producer/consumer queue and yields at turn boundaries, so a barge-in wins instantly.
 
 ```mermaid
@@ -18,11 +18,11 @@ stateDiagram-v2
 ```
 
 ## States
-- **Idle** — always-on wake detection.
-- **Listening** — capture the utterance until the turn boundary.
-- **Routing** — pick the compute layer: NPU-local vs async cloud/larger model.
-- **Speaking** — non-blocking TTS; interruptible.
-- **Offloaded** — heavy task runs async; the loop stays responsive; its result re-enters at Speaking.
+- **Idle** - always-on wake detection.
+- **Listening** - capture the utterance until the turn boundary.
+- **Routing** - pick the compute layer: NPU-local vs async cloud/larger model.
+- **Speaking** - non-blocking TTS; interruptible.
+- **Offloaded** - heavy task runs async; the loop stays responsive; its result re-enters at Speaking.
 
 ## Invariants
 - Speaking never blocks the loop (producer/consumer queue).

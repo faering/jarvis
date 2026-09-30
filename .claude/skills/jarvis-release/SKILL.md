@@ -1,6 +1,6 @@
 ---
 name: jarvis-release
-description: Cut a named Jarvis release ("Jarvis N — <Codename>") for a milestone - check it's ready, draft the manifest and notes, open the release PR for the user to merge, then verify what got published. Use when the user asks to release Jarvis N or cut a Jarvis release.
+description: Cut a named Jarvis release ("Jarvis N - <Codename>") for a milestone - check it's ready, draft the manifest and notes, open the release PR for the user to merge, then verify what got published. Use when the user asks to release Jarvis N or cut a Jarvis release.
 ---
 
 # jarvis-release
@@ -22,14 +22,14 @@ deploys nothing. Only the user's merge of the release PR publishes it. How it wo
    scripts/release/jarvis-release check
    ```
    Show the user the notes (`releases/jarvis-<N>.md`) and the pinned versions.
-3. **Open the PR** (`chore(repo): release Jarvis <N> — <Codename>`). The body gives the
+3. **Open the PR** (`chore(repo): release Jarvis <N> - <Codename>`). The body gives the
    pinned versions, a link to the notes, and `Refs` for the milestone's issues. **No
    closing keywords anywhere**: CI refuses them in the notes. Remove the worktree.
 4. **Hand over.** The user merges; never merge, and don't wait on CI
    ([[feedback-never-merge-prs]], [[feedback-dont-wait-for-ci]]).
 5. **After the merge, when asked:** verify that
    - tag `jarvis-vN.M` exists
-   - the GitHub release is titled "Jarvis N — <Codename>" with its notes and manifest, and is Latest
+   - the GitHub release is titled "Jarvis N - <Codename>" with its notes and manifest, and is Latest
    - the milestone is closed
    - the README roadmap is current (`scripts/release/jarvis-release readme --check`)
 

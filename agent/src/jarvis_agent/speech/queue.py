@@ -52,11 +52,11 @@ class SpeechQueue:
     """Speaks reply text without blocking the caller; see the module docstring.
 
     Backpressure: at most ``max_pending`` text chunks wait for synthesis. Enqueueing never
-    blocks — when full, the new chunk is dropped and logged (``dropped`` counts them). That
+    blocks - when full, the new chunk is dropped and logged (``dropped`` counts them). That
     many unspoken sentences means a runaway producer, and stalling the loop would be worse.
 
     Turns are bounded the same way: at most ``max_turns`` turns are in flight (queued,
-    synthesizing or playing). ``begin_turn`` past that limit refuses the *new* turn — it
+    synthesizing or playing). ``begin_turn`` past that limit refuses the *new* turn - it
     gets an id, is reported ``interrupted`` at once, ``wait()`` on it returns immediately
     and its text is ignored (``dropped_turns`` counts them). So end-of-turn markers, which
     are never dropped on their own, stay bounded too. Dropping the newest (rather than

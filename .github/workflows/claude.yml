@@ -1,7 +1,7 @@
 name: Claude Code
 
 # Responds to "@claude" in an issue/PR comment, an inline review comment, or the body
-# of a submitted PR review — then implements the change and pushes to the same branch.
+# of a submitted PR review - then implements the change and pushes to the same branch.
 on:
   issue_comment:
     types: [created]

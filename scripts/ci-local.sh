@@ -15,7 +15,7 @@ if ! command -v act >/dev/null 2>&1; then
 fi
 
 if [ ! -d .github/workflows ]; then
-  echo "note: no .github/workflows yet — nothing to run (see backlog E1)." >&2
+  echo "note: no .github/workflows yet - nothing to run (see backlog E1)." >&2
   exit 0
 fi
 

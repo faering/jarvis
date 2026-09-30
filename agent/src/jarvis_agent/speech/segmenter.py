@@ -5,7 +5,7 @@ import re
 # A sentence ends at . ! ? or … (optionally closed by quotes/brackets) followed by whitespace,
 # or at a newline. Requiring whitespace keeps "3.14" whole and waits for the next delta.
 _SENTENCE_END = re.compile(r"[.!?…]+[\"'”’)\]]*\s|\n")
-_CLAUSE_END = re.compile(r"[,;:]\s|\s[–—]\s")
+_CLAUSE_END = re.compile(r"[,;:]\s|\s[\u2013\u2014]\s")  # en/em dash in model replies
 _SPEAKABLE = re.compile(r"\w")
 
 

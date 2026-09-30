@@ -36,7 +36,7 @@ flowchart LR
   style PI fill:#F8FAFC,stroke:#16A34A,color:#14532D
 ```
 
-- The hardware inference path (Hailo, IMX500, GPIO) is **Pi-only** — never in the devcontainer.
+- The hardware inference path (Hailo, IMX500, GPIO) is **Pi-only** - never in the devcontainer.
 - **Deploy** = GitHub Actions → SSH to the Pi with a compatibility-matched agent+app set.
 - **Stretch:** Jarvis detects a new release and self-deploys, with a human approving.
 
@@ -90,7 +90,7 @@ flowchart LR
   not in `jarvis-log`, so it can't write or delete logs.
 
 ## Cut a Jarvis release
-A Jarvis release ("Jarvis N — <Codename>", tag `jarvis-vN.M`) pins a tested pair of
+A Jarvis release ("Jarvis N - <Codename>", tag `jarvis-vN.M`) pins a tested pair of
 component releases for a milestone (#162). Components keep releasing and deploying on their
 own in between. `jarvis-vN.0` is the first set for milestone N; `N.1`, `N.2`, … are later
 tested sets with the same codename.
@@ -110,7 +110,7 @@ tested sets with the same codename.
    open issues. Where changes are recorded: agent and app changes in their `CHANGELOG.md`;
    everything else (Pi setup, deploy, CI, protocol, docs) only in the Jarvis release notes.
 3. Edit the notes if needed; never write "closes/fixes #n" (CI refuses closing keywords).
-   Commit with `cz commit` (`chore(repo): release Jarvis 1 — Captain America`), push, open
+   Commit with `cz commit` (`chore(repo): release Jarvis 1 - Captain America`), push, open
    a PR. Its `jarvis release (pinned set)` check validates the manifest, the compatibility
    gate and the integration test on exactly the published agent image x the released app.
 4. Merge. `jarvis-release.yml` waits for `ci-ok` on main, tags `jarvis-v1.0`, publishes the

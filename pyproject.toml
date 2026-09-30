@@ -3,12 +3,12 @@
 [project]
 name = "jarvis"
 version = "0.1.0"
-description = "Jarvis — a handheld, physically embodied AI companion."
+description = "Jarvis - a handheld, physically embodied AI companion."
 requires-python = ">=3.12"
 
 # commitizen is used ONLY to author/lint Conventional Commit messages (`cz commit`,
 # and the commit-msg hook). Versioning, changelog, and GitHub releases are owned by
-# release-please — do not use `cz bump` here.
+# release-please - do not use `cz bump` here.
 [tool.commitizen]
 name = "cz_conventional_commits"
 update_changelog_on_bump = false

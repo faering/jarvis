@@ -2,7 +2,7 @@
 """Turn GitHub closing keywords in a release PR body into plain "refs" (#185).
 
 release-please (<17.10.4, bundled by release-please-action@v5) renders every commit
-footer reference as ", closes #n" — also `Refs #n`. GitHub acts on closing keywords in a
+footer reference as ", closes #n" - also `Refs #n`. GitHub acts on closing keywords in a
 PR description merged into the default branch, so merging the release PR closed issues
 that commits only referenced. Issues a commit really closed were already closed when that
 commit's PR merged, so the release PR never needs to close anything: every

@@ -2,11 +2,11 @@ name: release-please
 
 # Independent per-component releases from Conventional Commits. On every push to main,
 # release-please opens/updates one release PR per component; NOTHING is tagged or
-# released until a human merges that PR (and nothing is deployed — see #37/#38).
+# released until a human merges that PR (and nothing is deployed - see #37/#38).
 # Components (see release-please-config.json): agent (Python) -> tag agent-vX.Y.Z.
 # The app (frontend/, tag app-vX.Y.Z) is added back to the config when it is
 # scaffolded (#29). release-please attributes each commit to a component BY THE FILES
-# IT TOUCHES — keep a commit within one component's path.
+# IT TOUCHES - keep a commit within one component's path.
 #
 # Token: release PRs opened with the default GITHUB_TOKEN do not trigger other
 # workflows, so CI (and the required `ci-ok` check) would never run on them. We use a
@@ -41,7 +41,7 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           # Manifest-driven: reads release-please-config.json + .release-please-manifest.json.
       # release-please (<17.10.4, which the v5 action bundles) renders every commit's
-      # issue reference as ", closes #n" — also `Refs #n` — so merging a release PR
+      # issue reference as ", closes #n" - also `Refs #n` - so merging a release PR
       # closed issues that were only referenced (#185). Rewrite every closing keyword
       # in the open release PR bodies to "refs". Idempotent; runs after each update.
       # The release notes are built from the merged PR body, so they say "refs" too.

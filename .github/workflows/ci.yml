@@ -3,7 +3,7 @@ name: CI
 # PR/push checks. Mark ONLY `ci-ok` as a required status check: it aggregates every job,
 # so adding or skipping jobs never requires editing the branch ruleset.
 #
-# No workflow-level `paths:` filters on purpose — a required check that never runs stays
+# No workflow-level `paths:` filters on purpose - a required check that never runs stays
 # "pending" and blocks the merge. Component jobs instead skip themselves until their code
 # exists (see `detect`), and a skipped job counts as passing in `ci-ok`.
 on:

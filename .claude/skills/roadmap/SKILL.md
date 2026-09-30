@@ -1,6 +1,6 @@
 ---
 name: roadmap
-description: Plan and keep the Jarvis Project roadmap current — set/shift Start date, Target date, Sprint and Milestone on issues and epics, check items against milestone due dates, keep epics spanning their children, record actual dates on close, and show the timeline as text. Use when planning work, when asked "what's planned when", after closing or starting issues, or to reconcile the Roadmap view.
+description: Plan and keep the Jarvis Project roadmap current - set/shift Start date, Target date, Sprint and Milestone on issues and epics, check items against milestone due dates, keep epics spanning their children, record actual dates on close, and show the timeline as text. Use when planning work, when asked "what's planned when", after closing or starting issues, or to reconcile the Roadmap view.
 ---
 
 # roadmap
@@ -44,7 +44,7 @@ bugs → Fixed, `change:changed` / `change:deprecated` labels → Changed / Depr
    (P0/P1 first), dependencies ("Blocked by" in the issue body) and the user's capacity
    (subagent batches ≈ one day of work each).
 6. **Overdue** open items (target < today): don't silently shift. Report them with a
-   suggested new date and apply on OK — the slip itself is useful information.
+   suggested new date and apply on OK - the slip itself is useful information.
 7. **Every open feature, story, task and bug has a milestone;** an epic gets one only when
    all its open children share it (an issue holds one milestone). `new-issue` proposes one;
    `start-issue` sets one if missing and says which.
@@ -53,22 +53,22 @@ bugs → Fixed, `change:changed` / `change:deprecated` labels → Changed / Depr
    due date) and apply on OK. Never move a due date silently.
 
 ## Commands
-- **`sync`** — apply rules 1, 3 and report 6, 7 (items without a milestone) and 8.
+- **`sync`** - apply rules 1, 3 and report 6, 7 (items without a milestone) and 8.
   Safe to run anytime; `board-sync` calls it.
-- **`plan <issues|epic>`** — rule 5.
-- **`shift <issue> <days|date>`** — move start/target, then re-run rule 1 for its epic.
-- **`show [epic|sprint|milestone]`** — text timeline: per milestone (due date, closed/total),
+- **`plan <issues|epic>`** - rule 5.
+- **`shift <issue> <days|date>`** - move start/target, then re-run rule 1 for its epic.
+- **`show [epic|sprint|milestone]`** - text timeline: per milestone (due date, closed/total),
   then per epic, children with start → target, status, overdue/overrun flag.
-- **`milestones`** — list open milestones: due date, progress, overruns, items missing one.
-- **`milestone add <title> <due> <outcome>`** — propose, then create on OK.
-- **`plan-release <milestone>`** — the derived Added/Changed/Deprecated/Fixed list for a
+- **`milestones`** - list open milestones: due date, progress, overruns, items missing one.
+- **`milestone add <title> <due> <outcome>`** - propose, then create on OK.
+- **`plan-release <milestone>`** - the derived Added/Changed/Deprecated/Fixed list for a
   milestone, for review. To cut the release, use the `jarvis-release` skill. Before the milestone is done, list its open
   and closed issues by those rules (open ones marked). To cut it, follow
   [docs/deploy.md "Cut a Jarvis release"](../../../docs/deploy.md#cut-a-jarvis-release):
   `scripts/release/jarvis-release draft --milestone "<title>" --codename "<name>"` writes
   `releases/jarvis-N.toml` + `.md` (closed issues only) and the README roadmap block; ask the
   user for the codename if the milestone has none, and never merge the release PR.
-- **README roadmap** — `sync` also runs `scripts/release/jarvis-release readme --check`; if
+- **README roadmap** - `sync` also runs `scripts/release/jarvis-release readme --check`; if
   the milestones changed (title, due date, codename, closed), regenerate the block with
   `scripts/release/jarvis-release readme` in a PR.
 
