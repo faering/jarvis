@@ -11,5 +11,5 @@ paths:
 - Format with **prettier**, lint with **eslint** (both run in pre-commit).
 - The UI talks to the agent stack **only over the WebSocket bridge** - no direct DB/tool
   access. Handle reconnection and surface connection state.
-- Touch-first: design for the 4–5" touchscreen (day planning, notes, calendar).
+- Touch-first: design for the 4-5" touchscreen (day planning, notes, calendar).
 - Keep components typed; avoid `any`. Prefer semantic, accessible markup.

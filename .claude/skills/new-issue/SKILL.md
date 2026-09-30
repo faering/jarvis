@@ -9,7 +9,7 @@ Creates a schema-compliant work item. MCP-first. Shape: `_shared/issue-schema.md
 
 ## Gather (ask if any are missing or ambiguous)
 - `title`, `type` (epic/feature/story/task/bug), `summary`, acceptance criteria,
-  `priority` (P0–P3), `parent` (issue #), architecture decisions touched, `milestone`
+  `priority` (P0-P3), `parent` (issue #), architecture decisions touched, `milestone`
   (propose the fitting open one; see the `roadmap` skill).
 
 ## Steps

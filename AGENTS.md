@@ -33,10 +33,10 @@ the day, take notes, manage the calendar, and act as a sparring partner for hobb
 
 ## Hardware & three-compute-layer routing
 - Raspberry Pi 5 (16GB) orchestrator; AI HAT+ 2 (Hailo-10H NPU, 40 TOPS, 8GB); AI Camera
-  (IMX500); USB mic + speaker; 4–5" touchscreen; 3D-printed enclosure.
+  (IMX500); USB mic + speaker; 4-5" touchscreen; 3D-printed enclosure.
 - **Routing across three layers:** IMX500 on-camera inference → Hailo NPU → Pi 5 CPU
   orchestrator.
-- The always-on voice loop uses small quantized models (1–4B class). Heavier tasks route
+- The always-on voice loop uses small quantized models (1-4B class). Heavier tasks route
   **async** to the cloud or larger local models - never on the hot path.
 
 ## Language boundaries (do not cross)
@@ -75,9 +75,10 @@ the day, take notes, manage the calendar, and act as a sparring partner for hobb
   commitizen lints messages only - it does **not** bump versions.
 - **Releases**: automated by **release-please** - see *Releases & commit conventions*.
 - Run CI locally with **`act`** (`scripts/ci-local.sh`) before pushing.
-- **Write for people:** never use the middle dot (U+00B7) as a separator or the em dash
-  (U+2014), in docs, UI, generated text, commit messages or anywhere else; use commas,
-  "and", brackets, a list or a plain "-". The `no-middle-dot` pre-commit hook enforces it.
+- **Write for people:** never use the middle dot (U+00B7), the em dash (U+2014) or the en
+  dash (U+2013), in docs, UI, generated text, commit messages or anywhere else; use commas,
+  "and", brackets, a list or a plain "-" (also for ranges: "1-4B"). The `no-middle-dot`
+  pre-commit hook enforces it.
 - **Docs: short, concise, no clutter.** Update the doc a change affects in the same PR, and
   prefer extending an existing doc over adding a new one. Record architecture decisions,
   with the alternatives considered, as ADRs in [`docs/adr/`](docs/adr/README.md).

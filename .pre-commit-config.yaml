@@ -52,10 +52,10 @@ repos:
     hooks:
       # AGENTS.md "Write for people": no middle dot (U+00B7) as a separator, anywhere.
       - id: no-middle-dot
-        name: no middle dot or em dash (write commas, "and", brackets, a list or "-")
+        name: no middle dot, em or en dash (write commas, "and", brackets, a list or "-")
         language: pygrep
-        # U+00B7 middle dot and U+2014 em dash in UTF-8 (pygrep matches bytes).
-        entry: '\xc2\xb7|\xe2\x80\x94'
+        # U+00B7 middle dot, U+2014 em dash, U+2013 en dash in UTF-8 (pygrep matches bytes).
+        entry: '\xc2\xb7|\xe2\x80\x94|\xe2\x80\x93'
         types: [text]
       - id: eslint
         name: eslint + tsc (JS workspace)
