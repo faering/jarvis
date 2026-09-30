@@ -2,7 +2,7 @@
 Status: Accepted. Date: 2026-09-27.
 
 ## Context
-Spike #133 asked what the 4–5" screen shows by default. #138 prototyped three screens (face,
+Spike #133 asked what the 4-5" screen shows by default. #138 prototyped three screens (face,
 orb, ambient) and they were judged in the browser at the Pi's resolution. The screen's main
 job is still to come: showing panels (weather, today, diagrams) on request or when relevant
 (#143). The presence screen is what shows the rest of the time.

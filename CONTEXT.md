@@ -19,7 +19,7 @@ The ubiquitous vocabulary of Jarvis. Use these terms precisely in code, issues, 
 - **Hot path** - the latency-critical always-on interaction loop; must stay non-blocking.
 - **Always-on voice loop** - the continuous listen/respond loop driven by small quantized
   models.
-- **Quantized model (1–4B)** - a small local model used on the hot path.
+- **Quantized model (1-4B)** - a small local model used on the hot path.
 - **Async route** - offloading heavy tasks to the cloud or larger local models, off the hot
   path.
 

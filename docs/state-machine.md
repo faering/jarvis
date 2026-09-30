@@ -9,7 +9,7 @@ stateDiagram-v2
   Idle --> Listening: wake word / touch
   Listening --> Idle: timeout / cancel
   Listening --> Routing: turn boundary (end of utterance)
-  Routing --> Speaking: local response (1–4B)
+  Routing --> Speaking: local response (1-4B)
   Routing --> Offloaded: heavy task
   Offloaded --> Idle: dispatched (async)
   Offloaded --> Speaking: result ready (notify)

@@ -50,9 +50,9 @@ Every work item has:
 
 - **title** - imperative, concise (e.g. "Add WebSocket API to agent service").
 - **type** - one of the types above.
-- **summary** - 1–3 sentences: what and why.
+- **summary** - 1-3 sentences: what and why.
 - **acceptance criteria** - checklist of verifiable outcomes (`- [ ]`).
-- **priority** - `P0`–`P3`.
+- **priority** - `P0`-`P3`.
 - **status** - one of the statuses above.
 - **parent** - parent issue number, or `null` for a top-level Epic.
 - **iteration** - sprint/iteration name, or `null`.

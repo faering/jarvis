@@ -72,7 +72,7 @@ the agent; `ui` in `packages/`.
 **NPU** (Hailo), **CPU** (Pi orchestrator), **remote** (cloud / larger model) - and picks
 the first available one. Off-device the camera/NPU slots are empty, so work lands on CPU.
 - **Policy** (explicit, no model): the caller's route wins; else `deep` or a prompt over
-  ~4k chars → **heavy**; else **hot** (local 1–4B `llm`, NPU before CPU).
+  ~4k chars → **heavy**; else **hot** (local 1-4B `llm`, NPU before CPU).
 - **Heavy** runs on `heavy_llm` via `Router.offload()`, which returns an `asyncio.Task`
   at once; the reply re-enters later (Offloaded → Speaking), never on the hot path.
 - **Fallback:** heavy unconfigured, failing or timed out (120 s) → the local `llm` answers
