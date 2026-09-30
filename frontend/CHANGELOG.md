@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/faering/jarvis/compare/app-v0.2.0...app-v0.3.0) (2026-09-30)
+
+
+### Features
+
+* **app:** the app restarts itself into a newly installed version once Jarvis is quiet ([3e46bf1](https://github.com/faering/jarvis/commit/3e46bf14efc112cca5ca1c03c994897f0a5e8d01)), closes [#183](https://github.com/faering/jarvis/issues/183)
+
 ## [0.2.0](https://github.com/faering/jarvis/compare/app-v0.1.2...app-v0.2.0) (2026-09-29)
 
 
