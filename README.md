@@ -48,7 +48,7 @@ More in [Architecture](docs/architecture.md).
 ```mermaid
 timeline
   title Jarvis releases
-  Jarvis 1 - Captain America : Lives on the Pi : due 2026-10-18
+  Jarvis 1 - Captain America : Lives on the Pi : released as jarvis-v1.0
   Jarvis 2 - TBD : Ears and mouth : due 2026-11-15
 ```
 

@@ -1,0 +1,12 @@
+# Jarvis release manifest (#162): the tested set this release pins.
+# Drafted by scripts/release/jarvis-release; CI on the release PR runs the
+# integration test against exactly these published versions. Models are pinned
+# through the agent's model catalogue (ADR 0012).
+number = 1
+version = "1.0"  # tag jarvis-v1.0
+codename = "Captain America"
+milestone = "Jarvis 1: Lives on the Pi"
+
+[components]
+agent = "0.6.1"
+app = "0.3.0"
