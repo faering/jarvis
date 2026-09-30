@@ -35,7 +35,8 @@ jobs:
             echo "::error::Secret RELEASE_PLEASE_TOKEN is not set (see docs/release-please-token.md)."
             exit 1
           fi
-      - uses: googleapis/release-please-action@v5
+      - id: release
+        uses: googleapis/release-please-action@v5
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           # Manifest-driven: reads release-please-config.json + .release-please-manifest.json.
@@ -51,8 +52,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          # The release PRs this run created or updated. A PR created seconds ago can be
+          # missing from the label listing below (#238: #235 kept "closes #233"), so
+          # take them from release-please itself; the listing still catches the others.
+          PRS: ${{ steps.release.outputs.prs || '[]' }}
         run: |
-          for pr in $(gh pr list --state open --label "autorelease: pending" --json number -q '.[].number'); do
+          prs="$( {
+            jq -r '.[]?.number // empty' <<<"$PRS"
+            gh pr list --state open --label "autorelease: pending" --json number -q '.[].number'
+          } | sort -un)"
+          [ -n "$prs" ] || echo "no open release PRs"
+          for pr in $prs; do
             gh pr view "$pr" --json body -q .body > "$RUNNER_TEMP/body.md"
             python3 scripts/release-please/unclose_refs.py < "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/fixed.md"
             if cmp -s "$RUNNER_TEMP/body.md" "$RUNNER_TEMP/fixed.md"; then
