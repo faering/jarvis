@@ -113,5 +113,8 @@ settings), or on the Pi `sudo docker login ghcr.io` with a `read:packages` PAT. 
   reboots (at most once an hour; a step that hangs reboots at once) (#207, #212). Check it
   with `systemctl list-timers jarvis-netwatch.timer` and `jarvis-logs --component system`;
   `fixed_by=` says which step brought it back.
+- **Browser:** Chromium uses no keyring (autologin can't unlock one) and saves no passwords
+  (#211). Logins in it are only lightly protected on the SD card: don't stay logged in to
+  anything sensitive there.
 - **Reaching the Pi:** `ssh <user>@<pi>` or VS Code Remote-SSH from your tailnet, or
   [Raspberry Pi Connect](https://connect.raspberrypi.com) in a browser (not used by deploys).

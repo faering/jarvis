@@ -273,6 +273,14 @@ check "shell: prompt shows user, folder, branch and dirty mark" \
 check "shell: red arrow after a failed command" grep -q $'\033\\[1;31m\002➜' <<<"$prompt"
 check "shell: ll is ls -la" grep -q "alias ll='ls -la'" <<<"$prompt"
 check "shell: EDITOR is vim" grep -qx vim <<<"${prompt##*$'\n'}"
+f=/etc/chromium.d/90-jarvis
+# shellcheck disable=SC2016 # the file holds a literal $CHROMIUM_FLAGS
+check "browser: Chromium stores no key in a keyring" grep -qx 'export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --password-store=basic"' "$R$f"
+check "browser: flags file is valid shell" bash -n "$R$f"
+check "browser: flags file appends, keeping Raspberry Pi OS's flags" \
+  bash -c "CHROMIUM_FLAGS=--keep; . '$R$f'; [[ \$CHROMIUM_FLAGS == '--keep --password-store=basic' ]]"
+f=/etc/chromium/policies/managed/jarvis.json
+check "browser: password saving off (policy)" test "$(jq -r .PasswordManagerEnabled "$R$f")" == false
 check "log group jarvis-log with fixed GID 2750" grep -qx "jarvis-log:x:2750:" "$S/group"
 check "log group created with --gid" grep -q "groupadd --gid 2750 jarvis-log" "$S/calls"
 check "/var/log/jarvis is 2775 (setgid)" mode /var/log/jarvis 2775
