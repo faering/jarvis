@@ -99,7 +99,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: astral-sh/setup-uv@v10.2.0 # upstream publishes no floating major tag
+      - uses: astral-sh/setup-uv@v10.3.2 # upstream publishes no floating major tag
       - name: uv.lock matches pyproject.toml
         working-directory: agent
         run: uv lock --check
